@@ -1,11 +1,3 @@
-<img width="320" height="426" alt="Screenshot 2026-09-02 at 17-37-22 Meta Terms of Service" src="https://github.com/user-attachments/assets/2da66baf-d16e-4c98-8ad4-6876df4d059b" />
-<img width="320" height="295" alt="Screenshot 2026-09-02 at 17-43-31 Signup" src="https://github.com/user-attachments/assets/e4f68258-2724-42bb-a028-f31a3f18109f" />
-<img width="1904" height="1089" alt="Screenshot 2026-09-02 at 17-36-55 Policy Guard is installed" src="https://github.com/user-attachments/assets/8fdfc9a8-d0fc-46ef-9e26-8a5471df090b" />
-
-#1 Screenshot Pop up inside terms page
-#2 Screenshot Pop up when trying to sign up
-#3 Screenshot Install page
-
 # Policy Guard
 
 A Firefox extension that reads Terms of Service and Privacy Policies and tells
@@ -36,7 +28,23 @@ not an honest reading.
 
 ## Screenshots
 
-See [docs/screenshots/](docs/screenshots/).
+**Findings on a policy page.** The popup on Meta's Terms of Service: overall
+risk, how many concerns, and each one in plain language.
+
+<img width="320" alt="Policy Guard popup on Meta's Terms of Service, showing a risk level and a list of concerns" src="https://github.com/user-attachments/assets/2da66baf-d16e-4c98-8ad4-6876df4d059b" />
+
+**The warning that matters most.** On a signup form, the on-page panel lists the
+policies you are being asked to agree to, and offers to read them for you
+without opening them.
+
+<img width="320" alt="On-page panel on a signup form listing the policies the form asks you to agree to" src="https://github.com/user-attachments/assets/e4f68258-2724-42bb-a028-f31a3f18109f" />
+
+**First run.** What the extension does, and where to find it.
+
+<img width="900" alt="Policy Guard welcome page explaining the on-page panel and the toolbar button" src="https://github.com/user-attachments/assets/8fdfc9a8-d0fc-46ef-9e26-8a5471df090b" />
+
+Listing screenshots for addons.mozilla.org are a separate set with their own
+size requirements — see [docs/screenshots/](docs/screenshots/).
 
 ## Install (development)
 
