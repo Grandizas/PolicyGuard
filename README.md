@@ -26,6 +26,10 @@ were thrown away. *Show on page* scrolls to the clause and selects it.
 or keeps your content ownership says so, in green. A list of only bad news is
 not an honest reading.
 
+## Screenshots
+
+See [docs/screenshots/](docs/screenshots/).
+
 ## Install (development)
 
 No build step, no dependencies to compile.
@@ -61,6 +65,7 @@ then use that copy.
 ```bash
 npm run lint     # web-ext lint
 npm run build    # package into web-ext-artifacts/
+npm run verify   # confirm the packaged zip matches the source on disk
 npm run dev      # load into a temporary Firefox profile
 npm run serve    # test server on :8765 (needs Python), then open the URLs below
 ```
@@ -101,3 +106,7 @@ broadly.
 
 Informational only. Not legal advice, and no substitute for reading anything
 that matters to you.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).

@@ -4,7 +4,7 @@
   "version": "0.9.0",
   "description": "Reads Terms of Service and Privacy Policies and tells you what to be cautious about, before you agree.",
   "author": "grandizas",
-  "homepage_url": "https://github.com/grandizas/PolicyGuard",
+  "homepage_url": "https://github.com/Grandizas/PolicyGuard",
 
   "icons": {
     "48": "icons/icon.svg",
@@ -60,7 +60,7 @@
 
   "browser_specific_settings": {
     "gecko": {
-      "id": "policyguard@example.com",
+      "id": "policy-guard@grandizas.github.io",
       "strict_min_version": "140.0",
       "data_collection_permissions": {
         "required": ["none"],

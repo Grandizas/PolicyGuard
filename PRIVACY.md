@@ -104,4 +104,4 @@ of the extension that makes that change will say so on its first run.
 
 ## Contact
 
-Issues and questions: https://github.com/grandizas/PolicyGuard/issues
+Issues and questions: https://github.com/Grandizas/PolicyGuard/issues

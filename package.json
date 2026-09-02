@@ -2,10 +2,12 @@
   "name": "policy-guard",
   "version": "0.9.0",
   "description": "Firefox extension that reads Terms of Service and Privacy Policies and flags what to be cautious about.",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "lint": "npx --yes web-ext lint --source-dir .",
     "build": "npx --yes web-ext build --source-dir . --overwrite-dest",
+    "verify": "node tools/verify-build.mjs",
     "dev": "npx --yes web-ext run --source-dir .",
     "serve": "python -m http.server 8765"
   },
@@ -23,7 +25,9 @@
       "PRIVACY.md",
       ".idea",
       ".claude",
-      "web-ext-artifacts"
+      "web-ext-artifacts",
+      "tools",
+      "docs"
     ]
   }
 }

@@ -363,10 +363,11 @@ Icons, manifest metadata, a privacy policy, a README, and npm scripts for lint/b
 1. `npm run lint` — must be 0 errors (one Android-only warning is expected and is a `strict_min_version` artefact).
 2. `npm run build` — produces `web-ext-artifacts/policy_guard-<version>.zip`.
 3. Confirm the archive has no `test/`, `node_modules/` or docs.
-4. Host `PRIVACY.md` somewhere linkable and paste the URL into the AMO listing.
-5. In the listing, state plainly that AI analysis is optional, off by default, and uses the user's own API key.
-6. Declare data collection to match `data_collection_permissions`: none required, `websiteContent` optional.
-7. Note for reviewers: no build step — the submitted source is the code that runs.
+4. Paste `PRIVACY.md` into the AMO privacy-policy field (it takes text; no hosting needed).
+5. Select **MIT** as the licence, matching `LICENSE` in the repository.
+6. In the listing, state plainly that AI analysis is optional, off by default, and uses the user's own API key.
+7. Declare data collection to match `data_collection_permissions`: none required, `websiteContent` optional.
+8. Note for reviewers: no build step — the submitted source is the code that runs.
 
 ## 5. Testing
 
