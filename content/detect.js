@@ -392,9 +392,39 @@
         return links;
     }
 
+    /**
+     * A near-free test run on every page load before anything expensive.
+     *
+     * Full extraction costs 100ms+ on a large document, which is not a price
+     * worth paying on every page just in case. Real policies almost always
+     * announce themselves in the URL, the title or the first heading, so this
+     * looks only at those.
+     */
+    function looksLikePolicyPage(doc, url) {
+        if (scoreUrl(url).score >= 18) {
+            return true;
+        }
+
+        return scoreTitle(doc).score >= 26;
+    }
+
+    /**
+     * Is there anything on this page to agree to? Cheap enough to run before
+     * walking every anchor looking for policy links.
+     */
+    function hasAgreementControls(doc) {
+        const control = doc.querySelector(
+            "input[type='checkbox'], input[type='submit'], button[type='submit'], form"
+        );
+
+        return Boolean(control);
+    }
+
     PolicyGuard.detect = {
         detectPage,
         findPolicyLinks,
+        looksLikePolicyPage,
+        hasAgreementControls,
         SCORE_THRESHOLD,
         MIN_WORDS
     };

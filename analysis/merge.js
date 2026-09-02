@@ -127,6 +127,14 @@ export function mergeFindings(ruleFindings, llmFindings, options = {}) {
         ? capped
         : capped.filter((f) => concerns.includes(f.category));
 
+    if (concerns.length > 0) {
+        visible.sort((a, b) => {
+            const preferred = Number(concerns.includes(b.category)) - Number(concerns.includes(a.category));
+
+            return preferred !== 0 ? preferred : compareFindings(a, b);
+        });
+    }
+
     return {
         findings: visible,
         stats: {

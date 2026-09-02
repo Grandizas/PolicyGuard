@@ -21,6 +21,8 @@ import { cacheKey, readCache, writeCache, cacheStats, clearCache } from "./lib/c
 const CONTENT_FILES = [
     "content/detect.js",
     "content/extract.js",
+    "content/highlight.js",
+    "content/badge.js",
     "content/content.js"
 ];
 
@@ -386,10 +388,12 @@ async function startDeepAnalysis(tabId) {
 const MAX_LINKED_BYTES = 3 * 1024 * 1024;
 
 async function patchLinked(tabId, href, patch) {
-    const report = await getTabAnalysis(tabId);
+    let report = await getTabAnalysis(tabId);
 
     if (!report) {
-        return;
+        // The badge can start a check before the popup has ever run a scan, so
+        // there may be nothing to attach results to yet.
+        report = { supported: true, linked: {} };
     }
 
     report.linked = report.linked ?? {};
@@ -528,6 +532,86 @@ function startLinkedCheck(tabId, href) {
     return Promise.resolve({ started: true });
 }
 
+/* --------------------------------------------------------------- highlight */
+
+async function highlightQuote(tabId, quote) {
+    try {
+        await ensureContentScript(tabId);
+
+        const response = await browser.tabs.sendMessage(tabId, {
+            type: "PG_HIGHLIGHT",
+            quote
+        });
+
+        return response && response.ok ? response.result : { found: false };
+    } catch (error) {
+        return { found: false, error: String(error && error.message ? error.message : error) };
+    }
+}
+
+/* ------------------------------------------------------------------ badge */
+
+const DISMISS_PREFIX = "badgeDismissed:";
+
+/**
+ * Dismissal is per hostname and permanent until settings are cleared. Someone
+ * who closes the badge on a site has answered the question for that site.
+ */
+async function isDismissed(hostname) {
+    const key = DISMISS_PREFIX + hostname;
+    const stored = await browser.storage.local.get(key);
+
+    return Boolean(stored[key]);
+}
+
+async function badgeContext(hostname) {
+    const settings = await getSettings();
+
+    if (!settings.showInPageBadge || !settings.autoAnalyze) {
+        return { enabled: false };
+    }
+
+    return { enabled: !(await isDismissed(hostname)) };
+}
+
+async function badgeAnalyze(text) {
+    const settings = await getSettings();
+    const rules = await loadRules();
+    const { findings } = runRules(text, rules, { concerns: settings.concerns });
+
+    return {
+        riskLevel: riskLevelFromFindings(findings),
+        counts: summarize(findings),
+        findings
+    };
+}
+
+/**
+ * Badge-initiated link checks push their results back to the tab rather than
+ * being polled: the content script has no tab id of its own, and the sender
+ * gives us one for free.
+ */
+async function checkLinksForBadge(tabId, hrefs) {
+    for (const href of hrefs) {
+        await browser.tabs.sendMessage(tabId, {
+            type: "PG_LINK_RESULT",
+            href,
+            state: { status: "running" }
+        }).catch(() => undefined);
+
+        await checkLinkedPolicy(tabId, href).catch(() => undefined);
+
+        const report = await getTabAnalysis(tabId);
+        const state = report?.linked?.[href] ?? { status: "error", error: "Could not read it." };
+
+        await browser.tabs.sendMessage(tabId, {
+            type: "PG_LINK_RESULT",
+            href,
+            state
+        }).catch(() => undefined);
+    }
+}
+
 /* ---------------------------------------------------------------- messages */
 
 async function handleGetReport(tabId, force) {
@@ -561,6 +645,31 @@ browser.runtime.onMessage.addListener((message, sender) => {
         case "DEEP_ANALYZE":
             return startDeepAnalysis(message.tabId);
 
+        case "OPEN_OPTIONS":
+            return browser.runtime.openOptionsPage();
+
+        case "BADGE_CONTEXT":
+            return badgeContext(message.hostname);
+
+        case "BADGE_ANALYZE":
+            return badgeAnalyze(message.text);
+
+        case "BADGE_DISMISS":
+            return browser.storage.local.set({
+                [DISMISS_PREFIX + message.hostname]: Date.now()
+            });
+
+        case "PG_CHECK_LINKS":
+            // Sent by a content script, so the tab is whichever one asked.
+            if (sender && sender.tab) {
+                checkLinksForBadge(sender.tab.id, message.hrefs);
+            }
+
+            return Promise.resolve({ ok: true });
+
+        case "HIGHLIGHT":
+            return highlightQuote(message.tabId, message.quote);
+
         case "CHECK_LINK":
             return startLinkedCheck(message.tabId, message.href);
 
@@ -575,6 +684,18 @@ browser.runtime.onMessage.addListener((message, sender) => {
 
         default:
             return undefined;
+    }
+});
+
+/**
+ * Show the introduction once, on install.
+ *
+ * Without it the first thing a new user sees is a panel appearing on a page
+ * unannounced, with no explanation of where it came from or what else exists.
+ */
+browser.runtime.onInstalled.addListener((details) => {
+    if (details.reason === "install") {
+        browser.tabs.create({ url: browser.runtime.getURL("welcome/welcome.html") });
     }
 });
 

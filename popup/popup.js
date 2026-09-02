@@ -12,6 +12,9 @@ const rescanButton = document.querySelector("#rescan");
 let currentTabId = null;
 let pollTimer = null;
 
+/** Severity filter. Empty means show everything. */
+let severityFilter = null;
+
 const DOC_TYPE_LABELS = {
     privacy_policy: "Privacy policy",
     terms: "Terms of service",
@@ -101,6 +104,31 @@ function renderFinding(finding) {
             ));
         }
 
+        const actions = el("div", "f-actions");
+        const show = el("button", "linkish", "Show on page");
+        const outcome = el("span", "f-meta");
+
+        show.addEventListener("click", async () => {
+            outcome.textContent = "";
+
+            const result = await browser.runtime.sendMessage({
+                type: "HIGHLIGHT",
+                tabId: currentTabId,
+                quote: finding.quote
+            });
+
+            if (!result || !result.found) {
+                // Usually means the clause is behind a collapsed section, which
+                // is worth saying rather than failing silently.
+                outcome.textContent = "Could not find that wording on the page.";
+            } else if (result.partial) {
+                outcome.textContent = "Jumped to the start of it.";
+            }
+        });
+
+        actions.append(show, outcome);
+        details.append(actions);
+
         details.append(el(
             "p",
             "f-meta",
@@ -111,6 +139,47 @@ function renderFinding(finding) {
     }
 
     return item;
+}
+
+/**
+ * Severity filter. Only offered when there is enough to filter -- three chips
+ * over four findings is clutter, not a feature.
+ */
+function renderFilters(findings) {
+    const present = ["high", "medium", "low", "good"]
+        .filter((sev) => findings.some((f) => f.severity === sev));
+
+    if (findings.length < 5 || present.length < 2) {
+        return null;
+    }
+
+    const bar = el("div", "filters");
+
+    bar.setAttribute("role", "group");
+    bar.setAttribute("aria-label", "Filter findings by severity");
+
+    const makeChip = (value, label) => {
+        const active = severityFilter === value;
+        const chip = el("button", "filter-chip" + (active ? " active" : ""), label);
+
+        chip.setAttribute("aria-pressed", String(active));
+        chip.addEventListener("click", () => {
+            severityFilter = active ? null : value;
+            load(false, true);
+        });
+
+        return chip;
+    };
+
+    bar.append(makeChip(null, "All"));
+
+    for (const sev of present) {
+        const count = findings.filter((f) => f.severity === sev).length;
+
+        bar.append(makeChip(sev, `${SEVERITY_LABELS[sev]} (${count})`));
+    }
+
+    return bar;
 }
 
 function renderFindings(report) {
@@ -138,10 +207,20 @@ function renderFindings(report) {
         wrap.append(el("p", "verdict-clear", "No concerns matched"));
     }
 
-    if (findings.length > 0) {
+    const filters = renderFilters(findings);
+
+    if (filters) {
+        wrap.append(filters);
+    }
+
+    const visible = severityFilter
+        ? findings.filter((f) => f.severity === severityFilter)
+        : findings;
+
+    if (visible.length > 0) {
         const list = el("ul", "findings");
 
-        for (const finding of findings) {
+        for (const finding of visible) {
             list.append(renderFinding(finding));
         }
 

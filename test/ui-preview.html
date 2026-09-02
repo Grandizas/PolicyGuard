@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Policy Guard — in-page UI preview</title>
+    <style>
+        body { font: 15px/1.7 Georgia, serif; margin: 0; }
+        .page { max-width: 720px; margin: 0 auto; padding: 40px 20px 70vh; }
+        h1 { font-size: 22px; }
+        .bar { position: sticky; top: 0; background: #fffbe8; border-bottom: 1px solid #e2d9b0;
+               padding: 10px 20px; font: 13px system-ui, sans-serif; z-index: 10; }
+        .bar button { font: inherit; margin-right: 6px; padding: 4px 9px; cursor: pointer; }
+        #out { font: 12px ui-monospace, monospace; color: #444; }
+    </style>
+</head>
+<body>
+
+<!--
+    Loads a real policy fixture into a real page and runs the real content
+    scripts against it, so the highlighter and the badge can be exercised the
+    way they will actually run. Nothing here is stubbed except messaging.
+-->
+
+<div class="bar">
+    <button id="badgePolicy">Badge: policy page</button>
+    <button id="badgeSignup">Badge: signup form</button>
+    <button id="badgeClear">Remove badge</button>
+    <button id="hlFirst">Highlight a real quote</button>
+    <button id="hlFake">Highlight a fake quote</button>
+    <span id="out"></span>
+</div>
+
+<div class="page" id="page">Loading fixture…</div>
+
+<script src="../content/detect.js"></script>
+<script src="../content/extract.js"></script>
+<script src="../content/highlight.js"></script>
+<script src="../content/badge.js"></script>
+<script type="module">
+    import { compileRules, runRules, summarize } from "../analysis/rules.js";
+    import { riskLevelFromFindings } from "../lib/schema.js";
+
+    const noStore = { cache: "no-store" };
+    const out = document.querySelector("#out");
+
+    // Put a real policy into this real document.
+    const html = await (await fetch("fixtures/stackoverflow-tos.html", noStore)).text();
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    const source = parsed.querySelector("main, article, body");
+
+    document.querySelector("#page").replaceChildren(
+        ...Array.from(source.childNodes).map((n) => document.importNode(n, true))
+    );
+
+    const extraction = PolicyGuard.extract.extractPolicy(document);
+    const patternData = await (await fetch("../analysis/patterns.json", noStore)).json();
+    const { rules } = compileRules(patternData);
+    const { findings } = runRules(extraction.fullText, rules);
+
+    globalThis.__findings = findings;
+    globalThis.__extraction = extraction;
+
+    const handlers = {
+        onDismiss: () => {
+            PolicyGuard.badge.remove();
+            out.textContent = "dismissed";
+        },
+        onCheck: (hrefs) => {
+            out.textContent = "check requested: " + hrefs.length;
+        },
+        onShowQuote: (quote) => {
+            const r = PolicyGuard.highlight.showQuote(quote);
+            out.textContent = "show on page: " + JSON.stringify(r);
+        },
+        onOpenSettings: () => {
+            out.textContent = "settings requested";
+        }
+    };
+
+    document.querySelector("#badgePolicy").addEventListener("click", () => {
+        PolicyGuard.badge.showPolicy({
+            riskLevel: riskLevelFromFindings(findings),
+            counts: summarize(findings),
+            findings
+        }, handlers);
+        out.textContent = "policy badge shown";
+    });
+
+    document.querySelector("#badgeSignup").addEventListener("click", () => {
+        const links = [
+            { href: "https://examplr.test/terms", text: "Terms of Service", kind: "terms", nearAgreement: true },
+            { href: "https://examplr.test/privacy", text: "Privacy Policy", kind: "privacy_policy", nearAgreement: true }
+        ];
+
+        PolicyGuard.badge.showAgreementPrompt({
+            links,
+            results: {
+                "https://examplr.test/terms": {
+                    status: "done",
+                    isPolicy: true,
+                    riskLevel: "high",
+                    counts: summarize(findings),
+                    findings
+                }
+            }
+        }, handlers);
+
+        out.textContent = "signup badge shown";
+    });
+
+    document.querySelector("#badgeClear").addEventListener("click", () => {
+        PolicyGuard.badge.remove();
+        out.textContent = "removed";
+    });
+
+    document.querySelector("#hlFirst").addEventListener("click", () => {
+        const quote = findings.find((f) => f.quote && f.quote.length > 60)?.quote ?? "";
+        const result = PolicyGuard.highlight.showQuote(quote);
+
+        out.textContent = "highlight: " + JSON.stringify(result);
+    });
+
+    document.querySelector("#hlFake").addEventListener("click", () => {
+        const result = PolicyGuard.highlight.showQuote(
+            "We auction your personal information to the highest bidder every Tuesday."
+        );
+
+        out.textContent = "highlight: " + JSON.stringify(result);
+    });
+
+    globalThis.__ready = true;
+</script>
+
+</body>
+</html>

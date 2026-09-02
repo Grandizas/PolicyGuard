@@ -2,7 +2,7 @@
 
 A Firefox extension that reads Terms of Service / Privacy Policies and tells you what to be cautious about, **before** you click "I agree".
 
-Status: **Phases 1-4 complete.** 63/63 across the fixture corpus, the negation suite, the grounding/merge/chunking suite and the fetched-parse suite; `web-ext lint` is clean. Tier 1 runs offline on every policy; tier 2 is opt-in, BYO-key, cached, and every AI finding must cite text that actually appears on the page. A policy linked from a signup form can be read without opening it. Confirmed working in Firefox through tier 2.
+Status: **Phases 1-5 complete.** 68/68 across six suites; `web-ext lint` is clean. Tier 1 runs offline on every policy; tier 2 is opt-in, BYO-key, cached, and every AI finding must cite text that actually appears on the page. Findings jump to the clause on the page. An on-page panel warns about policies a form is asking you to agree to, without the popup being opened. Only Phase 6 (distribution) remains.
 
 ---
 
@@ -50,8 +50,8 @@ content/
   content.js             # detect + extract + respond
   detect.js              # is this a policy page? is there a policy link?
   extract.js             # DOM → clean structured text
-  highlight.js           # scroll-to + mark a quoted clause
-  badge.css              # in-page floating badge styles
+  highlight.js           # find a quoted clause and scroll to it
+  badge.js               # in-page panel, shadow DOM
 analysis/
   rules.js               # tier 1: pattern matching
   patterns.json          # the rule definitions (data, not code)
@@ -67,6 +67,8 @@ popup/
   popup.html/.css/.js
 options/
   options.html/.css/.js  # API key, concern preferences, privacy toggles
+welcome/
+  welcome.html/.css/.js  # first run: what it does, where the two surfaces are
 test/
   runner.html            # assertion suite over the fixture corpus
   analysis-suite.js      # grounding / merge / chunking assertions
@@ -78,8 +80,8 @@ test/
     *.html               # saved real-world policy HTML
 ```
 
-Everything exists today except `content/highlight.js` and `content/badge.css`,
-which arrive with Phases 4 and 5.
+Everything in this layout exists today; `content/badge.js` replaced the planned
+`badge.css` (its styles live inside the shadow root).
 
 No build step to start. Use ES modules (`"type": "module"` in the background, `<script type="module">` in the popup) and plain JS. Add a bundler only when a dependency demands it — for a two-panel extension it's mostly ceremony.
 
@@ -270,12 +272,51 @@ Eviction is expiry first (30 days), then least-recently-used down to 5 MB. `sele
 - **Nothing prompts a check automatically.** Detection of an agreement-adjacent policy link is passive. Auto-fetching on page load would be faster but would mean reaching out to third-party sites without being asked, which needs its own consent decision.
 - **`*://*/*` is now an optional host permission**, so any specific origin can be requested at the moment a user asks for it. Firefox shows that prompt per site; nothing is granted up front.
 
-### Phase 5 — Full UI
+### Phase 5 — Full UI — **done**
+
+`content/highlight.js` takes the reader to the cited clause; `content/badge.js` puts the summary on the page itself. Severity filter chips, preference re-ranking and a keyboard/focus pass round it out.
+
 
 - **Popup**: risk-level header, count, the concern list, per-item expand to reveal the quote and a "Show on page" button that messages the content script to scroll and `<mark>` it. Filter chips by severity.
 - **In-page badge** (mockup 4): a small floating pill, dismissible, remembers dismissal per hostname. Shadow DOM + `all: initial` so host-page CSS can't wreck it.
 - **Options / concern preferences** (mockup 5): checkboxes over the category enum. These *filter and re-rank* — a user who doesn't care about analytics shouldn't see analytics findings, and one who checks "AI training" should get it pinned to the top with severity bumped. Feed the selected categories into the LLM prompt too, so attention goes where the user cares.
 - Accessibility: real semantics, keyboard nav, `prefers-color-scheme` (the mockups are dark; light mode shouldn't be an afterthought), and never encode severity in color alone — the dots need a shape or text label beside them.
+
+#### Show on page
+
+Findings carry char offsets into the extracted text, but highlighting does not use them — it searches the live DOM for the quote instead. Offsets go stale the moment the page changes, and the extracted text is not the DOM; searching is both simpler and more robust. The page's text nodes are normalised the same way quotes are (case, smart quotes, dashes, whitespace) with an index back to each node, so a match becomes a real `Range`.
+
+Nothing is rewritten. The match is shown as an actual selection plus a temporary outline on the containing block, both of which undo cleanly — wrapping text in `<mark>` would mean mutating a document someone is in the middle of reading. If the exact wording is not found, the opening 60 characters are tried, and the popup says it jumped to the start rather than pretending.
+
+Measured across the corpus: **30 of 30 findings locate**, and the fabricated quote locates nowhere. One selection out of thirty differs from its quote by two whitespace characters where an inline element sits mid-sentence; it still lands on the right clause.
+
+#### The on-page panel
+
+Lives in a closed shadow root with `all: initial`. This runs on arbitrary sites, so the host page's CSS must not be able to reshape it and ours must not leak out — verified against a fixture whose own stylesheet mangles the surrounding page while the panel renders untouched.
+
+Two forms: a summary on a policy page, and the pre-agreement warning on a form. The second is what Phase 4 was missing — the check existed but only helped someone who thought to open the popup.
+
+**Cost of running on every page.** Full extraction is 100ms+ on a large document, which is not a price worth paying on every page load just in case. A near-free gate runs first — URL, `<title>` and `<h1>` only — and real policies almost always announce themselves in one of those. The signup case is gated on a cheap `querySelector` for a form control before any anchor walking.
+
+**A permission the badge cannot request.** `browser.permissions.request()` is not available to content scripts, so the panel's "Read it" button cannot ask for host access the way the popup can. Rather than have the button fail, settings now carry one explicit opt-in for reading linked policies across sites. Without it the panel still raises the warning and points at the toolbar, which asks per site.
+
+#### Discovery: the panel should not depend on the toolbar
+
+Testing on a real page surfaced a gap the harness could never show. The panel said *"3 more in the toolbar popup"* — which assumes the reader knows there is a toolbar button, knows which icon it is, and that Firefox has it pinned rather than tucked inside the puzzle-piece menu. For a new user that line is a dead end.
+
+Pointing harder at the toolbar would have been the wrong fix. Two changes instead:
+
+**The panel is now sufficient on its own.** *Show all N* expands it in place to every finding, each with its quote and a *Show on page* link that scrolls the page to that sentence. Nothing about the analysis is toolbar-only any more; the button is a second route to the same thing, not the way to see the rest. The toolbar is mentioned once, as a fact rather than an instruction.
+
+**A first-run page explains both surfaces once.** `browser.runtime.onInstalled` opens `welcome/` on install, covering what runs automatically, what the panel is, where the toolbar icon lives, and how to pin it. Without it the first thing a new user sees is a panel appearing unannounced on a page.
+
+The general lesson: a feature discovered only by people who already know the product exists is not really shipped. That is not visible from tests — it needed someone opening the extension for the first time.
+
+#### Still open at the end of Phase 5
+
+- **Auto-analysis is tier 1 only.** The panel never triggers a paid AI call on its own, and should not — but that means the on-page summary is always the rougher read.
+- **Dismissal is permanent per host** and only resettable by clearing extension storage. A "show these again" control belongs in settings.
+- **The panel has not been tried on a hostile layout** — a site with its own fixed bottom-right element will collide with it. Nothing breaks, but it may overlap.
 
 ### Phase 6 — Distribution
 
@@ -332,6 +373,6 @@ Two caveats to keep in mind when reading results: fixtures are static HTML, so a
 4. ~~Phase 2 rules engine + the popup list UI.~~ **Done** — and worth showing someone.
 5. ~~Phase 3 LLM behind a feature flag.~~ **Done** — opt-in, off by default, and gated behind an explicit consent tick.
 6. ~~Cache, then cost controls, then the signup-page check.~~ **Done** — the badge itself is Phase 5.
-7. Preferences, polish, AMO submission.
+7. ~~Preferences, polish.~~ **Done.** AMO submission is what remains.
 
 Phases 1–2 alone are a genuinely useful extension. Ship that, then add intelligence.

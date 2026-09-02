@@ -476,3 +476,52 @@ ul.links li .risk-head {
 ul.links li .findings {
     margin-bottom: 4px;
 }
+
+.filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin: 10px 0 2px;
+}
+
+.filter-chip {
+    padding: 3px 9px;
+
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.filter-chip:hover {
+    color: var(--fg);
+}
+
+.filter-chip.active {
+    background: var(--fg);
+    border-color: var(--fg);
+    color: var(--bg);
+    font-weight: 600;
+}
+
+.f-actions {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.f-actions .f-meta {
+    margin: 0;
+}
+
+.filter-chip:focus-visible,
+button:focus-visible,
+summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}

@@ -111,6 +111,101 @@
         };
     }
 
+    /* --------------------------------------------------------- auto badge */
+
+    /**
+     * Decide, cheaply, whether this page deserves a badge, and show one.
+     *
+     * Two cases matter. A policy page the reader is already on gets a summary.
+     * A form asking them to agree to policies they have not read gets the
+     * warning that this whole extension exists for.
+     */
+    async function autoRun() {
+        let context;
+
+        try {
+            context = await browser.runtime.sendMessage({
+                type: "BADGE_CONTEXT",
+                hostname: location.hostname
+            });
+        } catch (error) {
+            return;
+        }
+
+        if (!context || !context.enabled) {
+            return;
+        }
+
+        if (PolicyGuard.detect.looksLikePolicyPage(document, location.href)) {
+            const payload = scan();
+
+            if (!payload.detection.isPolicy) {
+                return;
+            }
+
+            const result = await browser.runtime.sendMessage({
+                type: "BADGE_ANALYZE",
+                text: payload.fullText
+            });
+
+            if (!result || result.counts.concerns === 0) {
+                return;
+            }
+
+            PolicyGuard.badge.showPolicy(result, badgeHandlers());
+            return;
+        }
+
+        // Not a policy. Is it a form asking for agreement to one?
+        if (!PolicyGuard.detect.hasAgreementControls(document)) {
+            return;
+        }
+
+        const links = PolicyGuard.detect
+            .findPolicyLinks(document, location.href)
+            .filter((link) => link.nearAgreement);
+
+        if (links.length === 0) {
+            return;
+        }
+
+        linkedLinks = links;
+        PolicyGuard.badge.showAgreementPrompt(
+            { links, results: linkedResults },
+            badgeHandlers()
+        );
+    }
+
+    function badgeHandlers() {
+        return {
+            onDismiss: dismiss,
+            onCheck: checkLinks,
+            onShowQuote: (quote) => PolicyGuard.highlight.showQuote(quote),
+            onOpenSettings: () => browser.runtime.sendMessage({ type: "OPEN_OPTIONS" })
+        };
+    }
+
+    let linkedLinks = [];
+    const linkedResults = {};
+
+    function dismiss() {
+        PolicyGuard.badge.remove();
+        browser.runtime.sendMessage({ type: "BADGE_DISMISS", hostname: location.hostname });
+    }
+
+    function checkLinks(hrefs) {
+        browser.runtime.sendMessage({ type: "PG_CHECK_LINKS", hrefs });
+    }
+
+    function onLinkResult(href, state) {
+        linkedResults[href] = state;
+
+        PolicyGuard.badge.showAgreementPrompt(
+            { links: linkedLinks, results: linkedResults },
+            badgeHandlers()
+        );
+    }
+
     // Exposed so test/runner.html can exercise the real functions rather than
     // a copy of them.
     PolicyGuard.scan = scan;
@@ -138,6 +233,24 @@
                     return Promise.resolve({ ok: false, error: String(error) });
                 }
 
+            case "PG_HIGHLIGHT":
+                try {
+                    return Promise.resolve({
+                        ok: true,
+                        result: PolicyGuard.highlight.showQuote(message.quote)
+                    });
+                } catch (error) {
+                    return Promise.resolve({ ok: false, error: String(error) });
+                }
+
+            case "PG_LINK_RESULT":
+                onLinkResult(message.href, message.state);
+                return Promise.resolve({ ok: true });
+
+            case "PG_CLEAR_HIGHLIGHT":
+                PolicyGuard.highlight.clearHighlight();
+                return Promise.resolve({ ok: true });
+
             case "PG_SCAN_HTML":
                 try {
                     return Promise.resolve({
@@ -153,4 +266,12 @@
                 return undefined;
         }
     });
+
+    // The badge is the only thing that happens without being asked for, so it
+    // waits for the page to settle first.
+    if (document.readyState === "complete") {
+        autoRun();
+    } else {
+        window.addEventListener("load", autoRun, { once: true });
+    }
 })();

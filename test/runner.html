@@ -36,6 +36,9 @@
 <h2>5. Reading a linked policy without opening it</h2>
 <pre id="linked">Running...</pre>
 
+<h2>6. Show on page</h2>
+<pre id="highlight">Running...</pre>
+
 <h2>Summary</h2>
 <pre id="summary">Running…</pre>
 
@@ -43,6 +46,7 @@
 
 <script src="../content/detect.js"></script>
 <script src="../content/extract.js"></script>
+<script src="../content/highlight.js"></script>
 <script src="../content/content.js"></script>
 <script type="module">
     import { compileRules, runRules } from "../analysis/rules.js";
@@ -330,6 +334,52 @@
     }
 
     document.querySelector("#linked").textContent = linkedLines.join("\n");
+
+    /* ------------------------------------------------- 6. show-on-page */
+
+    const highlightLines = [];
+
+    for (const testCase of cases.filter((c) => c.expect.isPolicy)) {
+        const frame = await loadFixture(testCase.file);
+        const doc = frame.contentDocument;
+        const extraction = PolicyGuard.extract.extractPolicy(doc);
+        const { findings } = runRules(extraction.fullText, rules);
+        const problems = [];
+
+        let found = 0;
+
+        for (const finding of findings) {
+            const result = PolicyGuard.highlight.showQuote(finding.quote, doc);
+
+            if (result.found) {
+                found += 1;
+            } else {
+                problems.push("could not locate " + finding.id);
+            }
+        }
+
+        // A quote no rule produced must not match anything either.
+        const invented = PolicyGuard.highlight.showQuote(
+            "We auction your personal information to the highest bidder every Tuesday.",
+            doc
+        );
+
+        if (invented.found) {
+            problems.push("a fabricated quote was located on the page");
+        }
+
+        PolicyGuard.highlight.clearHighlight(doc);
+
+        highlightLines.push(
+            pad(testCase.file.replace(".html", ""), 26) +
+            pad(found + "/" + findings.length + " located", 18) +
+            record(problems)
+        );
+
+        frame.remove();
+    }
+
+    document.querySelector("#highlight").textContent = highlightLines.join("\n");
 
     /* ------------------------------------------------------------- summary */
 

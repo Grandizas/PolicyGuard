@@ -223,3 +223,9 @@ code {
     font-weight: 400;
     color: var(--muted);
 }
+
+.note {
+    margin: 8px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+}

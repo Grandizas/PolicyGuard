@@ -39,6 +39,8 @@
       "js": [
         "content/detect.js",
         "content/extract.js",
+        "content/highlight.js",
+        "content/badge.js",
         "content/content.js"
       ],
       "run_at": "document_idle"

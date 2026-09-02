@@ -1,0 +1,285 @@
+:root {
+    color-scheme: light dark;
+
+    --bg: #ffffff;
+    --fg: #17181c;
+    --muted: #6a6d78;
+    --line: #e3e4e8;
+    --panel: #f5f6f8;
+    --accent: #3b6df5;
+    --bad: #e0525f;
+    --warn: #d98324;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #111214;
+        --fg: #f2f3f5;
+        --muted: #9a9da7;
+        --line: #2a2c31;
+        --panel: #1a1c1f;
+        --accent: #7d9bff;
+        --bad: #ff6b78;
+        --warn: #f0a145;
+    }
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 48px 24px 64px;
+
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+
+    background: var(--bg);
+    color: var(--fg);
+}
+
+main {
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+.eyebrow {
+    margin: 0 0 6px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+h1 {
+    margin: 0 0 12px;
+    font-size: 28px;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+}
+
+h2 {
+    margin: 0 0 8px;
+    font-size: 16px;
+}
+
+.lede {
+    margin: 0 0 32px;
+    color: var(--muted);
+    font-size: 16px;
+}
+
+p {
+    margin: 0 0 10px;
+}
+
+/* ------------------------------------------------------------- surfaces */
+
+.surface {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 24px;
+    align-items: start;
+
+    padding: 22px 0;
+    border-top: 1px solid var(--line);
+}
+
+@media (max-width: 620px) {
+    .surface {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+}
+
+.art {
+    padding: 14px;
+    background: var(--panel);
+    border-radius: 10px;
+}
+
+.art-caption {
+    margin: 10px 0 0;
+    color: var(--muted);
+    font-size: 11px;
+    text-align: center;
+}
+
+/* A small, obviously-illustrative sketch of the on-page panel. */
+.mini-panel {
+    padding: 8px 9px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
+}
+
+.mini-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.mini-name {
+    flex: 1 1 auto;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.mini-x {
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.mini-pill {
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--bad);
+    color: #fff;
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.mini-count {
+    font-size: 9px;
+    font-weight: 600;
+}
+
+.mini-line {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 5px;
+}
+
+.mini-line span:last-child {
+    flex: 1 1 auto;
+    height: 5px;
+    border-radius: 3px;
+    background: var(--line);
+}
+
+.mini-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+}
+
+.mini-dot.red { background: var(--bad); }
+.mini-dot.amber { background: var(--warn); }
+
+/* Sketch of the browser toolbar. */
+.mini-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    padding: 7px 9px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+}
+
+.mini-url {
+    flex: 1 1 auto;
+    height: 9px;
+    border-radius: 5px;
+    background: var(--line);
+}
+
+.mini-puzzle,
+.mini-icon {
+    font-size: 13px;
+}
+
+.mini-icon {
+    padding: 1px 3px;
+    border-radius: 4px;
+    outline: 2px solid var(--accent);
+}
+
+.hint {
+    margin-top: 10px;
+    padding: 9px 11px;
+
+    background: var(--panel);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+
+    font-size: 14px;
+}
+
+.chip {
+    padding: 0 3px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+}
+
+/* ---------------------------------------------------------------- plain */
+
+.plain {
+    padding: 22px 0;
+    border-top: 1px solid var(--line);
+}
+
+.plain ul {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.plain li {
+    margin-bottom: 7px;
+}
+
+/* -------------------------------------------------------------- actions */
+
+.actions {
+    display: flex;
+    gap: 10px;
+    margin: 26px 0 0;
+}
+
+button {
+    padding: 9px 16px;
+
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: var(--accent);
+    color: #fff;
+
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+button.ghost {
+    background: transparent;
+    border-color: var(--line);
+    color: var(--muted);
+}
+
+button.ghost:hover {
+    color: var(--fg);
+    border-color: var(--muted);
+}
+
+button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+footer {
+    margin-top: 32px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+
+    color: var(--muted);
+    font-size: 12px;
+}

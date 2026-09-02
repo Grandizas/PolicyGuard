@@ -21,6 +21,34 @@
     </section>
 
     <section>
+        <h2>On-page warnings</h2>
+
+        <label class="row">
+            <input type="checkbox" id="showInPageBadge">
+            <span>
+                <b>Show a summary on the page</b>
+                <small>
+                    A small panel appears on policy pages, and on forms asking you
+                    to agree to policies you have not read. Dismissing it on a site
+                    keeps it away for that site.
+                </small>
+            </span>
+        </label>
+
+        <div class="panel" id="readLinkedPanel">
+            <p>
+                <b>Reading linked policies from the page</b><br>
+                To read a policy the on-page panel offers, Policy Guard needs
+                permission to fetch other sites. It fetches without cookies and
+                runs none of their scripts. Without this you can still check a
+                policy one site at a time from the toolbar popup.
+            </p>
+            <button type="button" id="grantAllSites">Allow reading linked policies</button>
+            <p class="note" id="allSitesState"></p>
+        </div>
+    </section>
+
+    <section>
         <h2>Deep analysis</h2>
 
         <label class="row">

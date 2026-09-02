@@ -10,7 +10,13 @@ import { CATEGORIES, CATEGORY_LABELS } from "../lib/schema.js";
 import { getSettings, updateSettings, getApiKey, setApiKey } from "../lib/storage.js";
 import { MODELS, API_ORIGIN, typicalCost } from "../analysis/llm.js";
 
+/** Lets the on-page panel read a policy without a prompt per site. */
+const ALL_SITES = "*://*/*";
+
 const els = {
+    showInPageBadge: document.querySelector("#showInPageBadge"),
+    grantAllSites: document.querySelector("#grantAllSites"),
+    allSitesState: document.querySelector("#allSitesState"),
     llmEnabled: document.querySelector("#llmEnabled"),
     disclosure: document.querySelector("#disclosure"),
     accepted: document.querySelector("#networkDisclosureAccepted"),
@@ -127,6 +133,21 @@ function formatBytes(bytes) {
     return (bytes / (1024 * 1024)).toFixed(1) + " MB";
 }
 
+async function refreshAllSites() {
+    let granted = false;
+
+    try {
+        granted = await browser.permissions.contains({ origins: [ALL_SITES] });
+    } catch (error) {
+        granted = false;
+    }
+
+    els.grantAllSites.hidden = granted;
+    els.allSitesState.textContent = granted
+        ? "Allowed. The on-page panel can read linked policies directly."
+        : "Not allowed. You will be asked per site from the toolbar popup instead.";
+}
+
 async function refreshCacheStats() {
     const stats = await browser.runtime.sendMessage({ type: "CACHE_STATS" });
 
@@ -147,6 +168,7 @@ async function init() {
     const settings = await getSettings();
     const key = await getApiKey();
 
+    els.showInPageBadge.checked = settings.showInPageBadge;
     els.llmEnabled.checked = settings.llmEnabled;
     els.accepted.checked = settings.networkDisclosureAccepted;
     els.apiKey.value = key;
@@ -157,10 +179,26 @@ async function init() {
     buildConcerns(settings.concerns);
     syncDisclosureVisibility(settings.llmEnabled);
     await refreshPermissionPanel();
+    await refreshAllSites();
     await refreshCacheStats();
 }
 
 /* ----------------------------------------------------------------- events */
+
+els.showInPageBadge.addEventListener("change", async () => {
+    await updateSettings({ showInPageBadge: els.showInPageBadge.checked });
+    flashSaved();
+});
+
+els.grantAllSites.addEventListener("click", async () => {
+    try {
+        await browser.permissions.request({ origins: [ALL_SITES] });
+    } catch (error) {
+        // Declining is a legitimate answer.
+    }
+
+    await refreshAllSites();
+});
 
 els.llmEnabled.addEventListener("change", async () => {
     const enabled = els.llmEnabled.checked;

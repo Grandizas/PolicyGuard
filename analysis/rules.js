@@ -390,10 +390,21 @@ export function runRules(text, rules, options = {}) {
         findings.push(finding);
     }
 
-    // User preferences filter the view, they do not change what was found.
+    // User preferences filter the view; they do not change what was found.
     const visible = concerns.length === 0
         ? findings
         : findings.filter((f) => concerns.includes(f.category));
+
+    // Within what is shown, the categories someone said they care about come
+    // first. Severity still decides the order inside each group -- a low-severity
+    // preference should not outrank a high-severity surprise.
+    if (concerns.length > 0) {
+        visible.sort((a, b) => {
+            const preferred = Number(concerns.includes(b.category)) - Number(concerns.includes(a.category));
+
+            return preferred !== 0 ? preferred : compareFindings(a, b);
+        });
+    }
 
     return {
         findings: visible,
