@@ -21,6 +21,7 @@
 
 <script src="../content/detect.js"></script>
 <script src="../content/extract.js"></script>
+<script src="../content/content.js"></script>
 <script type="module">
     import { compileRules, runRules, summarize } from "../analysis/rules.js";
     import { riskLevelFromFindings } from "../lib/schema.js";
@@ -31,6 +32,8 @@
     const params = new URLSearchParams(location.search);
     const fixtureFile = params.get("fixture") ?? "apple-privacy.html";
     const deepMode = params.get("deep") ?? "idle";
+    const linkedMode = params.get("linked") ?? "none";
+    const cachedMode = params.get("cached") === "1";
 
     const noStore = { cache: "no-store" };
 
@@ -129,6 +132,38 @@
         };
     }
 
+    /* --- optional linked-policy state for the signup-page case ------------ */
+
+    const linked = {};
+
+    if (linkedMode !== "none" && policyLinks.length > 0) {
+        const target = policyLinks.find((l) => l.nearAgreement) ?? policyLinks[0];
+
+        if (linkedMode === "running") {
+            linked[target.href] = { status: "running", error: null };
+        } else if (linkedMode === "error") {
+            linked[target.href] = { status: "error", error: "The policy page returned 404." };
+        } else {
+            // Read a real fixture through the real unrendered path, so this
+            // shows what a genuine linked check produces.
+            const html = await (await fetch("fixtures/stackoverflow-tos.html", noStore)).text();
+            const scanned = PolicyGuard.scanHtml(html, "https://examplr.test/legal/terms-of-service");
+            const found = runRules(scanned.fullText, rules).findings;
+
+            linked[target.href] = {
+                status: "done",
+                isPolicy: true,
+                error: null,
+                title: scanned.title,
+                docType: scanned.detection.docType,
+                wordCount: scanned.extraction.wordCount,
+                riskLevel: riskLevelFromFindings(found),
+                counts: summarize(found),
+                findings: found
+            };
+        }
+    }
+
     const deepStates = {
         off: { status: "idle", available: false, blockedReason: "Deep analysis is switched off in settings." },
         idle: { status: "idle", available: true, blockedReason: null },
@@ -144,6 +179,7 @@
         title: doc.title,
         preview: extraction.fullText.slice(0, 400),
         policyLinks,
+        linked,
         counts: summarize(findings),
         ruleStats: ruleResult.stats,
         ruleFindings: ruleResult.findings,
@@ -154,6 +190,8 @@
             progress: null,
             error: null,
             stats: null,
+            cached: cachedMode,
+            cachedAt: cachedMode ? Date.now() - 86400000 : null,
             ...(deepStates[deepMode] ?? deepStates.idle)
         },
         analysis: {

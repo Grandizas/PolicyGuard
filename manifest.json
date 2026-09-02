@@ -11,7 +11,8 @@
   ],
 
   "optional_host_permissions": [
-    "https://api.anthropic.com/*"
+    "https://api.anthropic.com/*",
+    "*://*/*"
   ],
 
   "action": {

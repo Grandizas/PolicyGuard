@@ -261,6 +261,20 @@ function renderDeep(report) {
     }
 
     if (deep.status === "done") {
+        if (deep.cached) {
+            const when = deep.cachedAt
+                ? new Date(deep.cachedAt).toLocaleDateString()
+                : null;
+
+            box.append(el(
+                "p",
+                "f-meta",
+                when
+                    ? `Loaded from the cache, analysed ${when}. No request was made.`
+                    : "Loaded from the cache. No request was made."
+            ));
+        }
+
         if (deep.stats) {
             box.append(renderDeepStats(deep.stats));
         }
@@ -285,6 +299,18 @@ function renderDeep(report) {
     }
 
     const estimate = deep.estimate;
+
+    // A cache hit costs nothing, so offering it as a purchase would be a lie.
+    if (deep.cached) {
+        box.append(makeDeepButton(report, "Show AI analysis"));
+        box.append(el(
+            "p",
+            "f-meta",
+            "Already analysed. Loads from the cache with no request and no cost."
+        ));
+
+        return box;
+    }
 
     box.append(makeDeepButton(report, "Run AI analysis"));
 
@@ -459,15 +485,84 @@ function renderPageDetails(report) {
 
 /* ------------------------------------------------------------ policy links */
 
-function renderPolicyLinks(links) {
-    const details = el("details");
+function renderLinkedResult(state) {
+    if (state.status === "running") {
+        return el("p", "f-meta", "Reading it…");
+    }
 
-    details.open = links.some((link) => link.nearAgreement);
-    details.append(el("summary", null, `Policy links on this page (${links.length})`));
+    if (state.status === "error") {
+        return el("p", "deep-error", state.error);
+    }
+
+    if (state.status !== "done") {
+        return null;
+    }
+
+    if (!state.isPolicy) {
+        return el("p", "f-meta", "That link did not lead to a readable policy.");
+    }
+
+    const wrap = document.createDocumentFragment();
+    const head = el("div", "risk-head");
+
+    head.append(el("span", "risk-pill risk-" + state.riskLevel, RISK_LABELS[state.riskLevel]));
+    head.append(el(
+        "span",
+        "concern-count",
+        state.counts.concerns === 1 ? "1 concern" : `${state.counts.concerns} concerns`
+    ));
+
+    wrap.append(head);
+
+    if (state.findings.length > 0) {
+        const list = el("ul", "findings");
+
+        for (const finding of state.findings) {
+            list.append(renderFinding(finding));
+        }
+
+        wrap.append(list);
+    }
+
+    wrap.append(el("p", "f-meta", `${formatNumber(state.wordCount)} words read without opening the page.`));
+
+    return wrap;
+}
+
+/**
+ * The signup-page case: the policy is one click away behind a checkbox, and
+ * this is the moment it is worth reading. Checking it fetches the document
+ * directly rather than navigating, so the form the user is filling in is
+ * never disturbed.
+ */
+function renderPolicyLinks(report) {
+    const links = report.policyLinks;
+    const linked = report.linked ?? {};
+
+    const details = el("details");
+    const beside = links.filter((link) => link.nearAgreement);
+
+    details.open = beside.length > 0;
+    details.append(el(
+        "summary",
+        null,
+        beside.length > 0
+            ? `Policies you are about to agree to (${beside.length})`
+            : `Policy links on this page (${links.length})`
+    ));
+
+    if (beside.length > 0) {
+        details.append(el(
+            "p",
+            "f-meta",
+            "These sit next to an agree control on this page."
+        ));
+    }
 
     const list = el("ul", "links");
+    const shown = beside.length > 0 ? beside : links.slice(0, 8);
 
-    for (const link of links.slice(0, 12)) {
+    for (const link of shown) {
         const item = el("li");
         const label = el("div", null, link.text);
 
@@ -477,6 +572,60 @@ function renderPolicyLinks(links) {
 
         item.append(label);
         item.append(el("div", "kind", DOC_TYPE_LABELS[link.kind] ?? link.kind));
+
+        const state = linked[link.href];
+
+        if (state) {
+            const rendered = renderLinkedResult(state);
+
+            if (rendered) {
+                item.append(rendered);
+            }
+        }
+
+        if (!state || state.status === "error") {
+            const button = el("button", "primary small", state ? "Try again" : "Check this policy");
+
+            button.addEventListener("click", async () => {
+                button.disabled = true;
+                button.textContent = "Starting…";
+
+                // Reading another site needs its own host permission, and the
+                // request has to happen inside this click to be allowed.
+                let origin;
+
+                try {
+                    origin = new URL(link.href).origin + "/*";
+                } catch (error) {
+                    return;
+                }
+
+                try {
+                    const granted = await browser.permissions.request({ origins: [origin] });
+
+                    if (!granted) {
+                        button.disabled = false;
+                        button.textContent = "Check this policy";
+                        return;
+                    }
+                } catch (error) {
+                    button.disabled = false;
+                    button.textContent = "Check this policy";
+                    return;
+                }
+
+                await browser.runtime.sendMessage({
+                    type: "CHECK_LINK",
+                    tabId: currentTabId,
+                    href: link.href
+                });
+
+                startPolling();
+                load(false, true);
+            });
+
+            item.append(button);
+        }
 
         list.append(item);
     }
@@ -528,7 +677,7 @@ function renderReport(report) {
         view.append(el("p", "muted", why));
 
         if (report.policyLinks.length > 0) {
-            view.append(renderPolicyLinks(report.policyLinks));
+            view.append(renderPolicyLinks(report));
         }
 
         view.append(renderPageDetails(report));
@@ -578,7 +727,10 @@ async function load(force, quiet) {
 
         renderReport(report);
 
-        if (report.deep && report.deep.status === "running") {
+        const linkedRunning = Object.values(report.linked ?? {})
+            .some((state) => state.status === "running");
+
+        if ((report.deep && report.deep.status === "running") || linkedRunning) {
             startPolling();
         } else {
             stopPolling();

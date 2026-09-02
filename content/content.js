@@ -30,6 +30,50 @@
         }));
     }
 
+    /**
+     * Analyse HTML the background fetched, rather than the page we are on.
+     *
+     * This is how a policy linked from a signup form gets read without opening
+     * it. DOMParser runs no scripts and loads no subresources, so nothing on
+     * that page can see the visit -- but the document also has no layout, so
+     * `getComputedStyle` is unavailable and visibility-based filtering is
+     * skipped. Structural junk removal still applies.
+     */
+    function scanHtml(html, url) {
+        const parsed = new DOMParser().parseFromString(html, "text/html");
+        const extraction = PolicyGuard.extract.extractPolicy(parsed);
+
+        const detection = PolicyGuard.detect.detectPage(
+            parsed,
+            url,
+            extraction.fullText,
+            extraction.wordCount
+        );
+
+        return {
+            url,
+            hostname: new URL(url).hostname,
+            title: parsed.title,
+            detection,
+            extraction: {
+                method: extraction.method,
+                wordCount: extraction.wordCount,
+                charCount: extraction.charCount,
+                blockCount: extraction.blockCount,
+                sectionCount: extraction.sections.length,
+                sections: sectionOutline(extraction.sections),
+                degraded: extraction.degraded,
+                collapsedSections: extraction.collapsedSections,
+                unreadableFrames: 0,
+                // The caller should know this was read without rendering.
+                unrendered: true
+            },
+            policyLinks: [],
+            preview: extraction.fullText.slice(0, PREVIEW_CHARS),
+            fullText: extraction.fullText
+        };
+    }
+
     function scan() {
         const extraction = PolicyGuard.extract.extractPolicy(document);
 
@@ -67,6 +111,17 @@
         };
     }
 
+    // Exposed so test/runner.html can exercise the real functions rather than
+    // a copy of them.
+    PolicyGuard.scan = scan;
+    PolicyGuard.scanHtml = scanHtml;
+
+    // Outside an extension there is no messaging to attach to; the functions
+    // above are still usable, which is what the test runner relies on.
+    if (typeof browser === "undefined" || !browser.runtime) {
+        return;
+    }
+
     browser.runtime.onMessage.addListener((message) => {
         if (!message || typeof message.type !== "string") {
             return undefined;
@@ -79,6 +134,16 @@
             case "PG_SCAN":
                 try {
                     return Promise.resolve({ ok: true, payload: scan() });
+                } catch (error) {
+                    return Promise.resolve({ ok: false, error: String(error) });
+                }
+
+            case "PG_SCAN_HTML":
+                try {
+                    return Promise.resolve({
+                        ok: true,
+                        payload: scanHtml(message.html, message.url)
+                    });
                 } catch (error) {
                     return Promise.resolve({ ok: false, error: String(error) });
                 }

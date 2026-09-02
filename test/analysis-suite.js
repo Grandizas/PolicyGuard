@@ -9,6 +9,7 @@
 import { verifyFindings, groundQuote, buildDocumentIndex } from "../analysis/verify.js";
 import { mergeFindings } from "../analysis/merge.js";
 import { chunkPolicy, MAX_SINGLE_PASS_CHARS } from "../analysis/prompt.js";
+import { selectEvictions, cacheKey, TTL_MS } from "../lib/cache.js";
 
 /**
  * @param {string} doc     real extracted policy text to ground against
@@ -18,6 +19,7 @@ export function runAnalysisSuite(doc, check) {
     groundingChecks(doc, check);
     mergeChecks(check);
     chunkChecks(check);
+    cacheChecks(check);
 }
 
 /* -------------------------------------------------------------- grounding */
@@ -203,4 +205,62 @@ function chunkChecks(check) {
     check("chunks cover the whole document",
         chunks.length > 0 && chunks[chunks.length - 1].charEnd === long.length,
         "last chunk ends at " + (chunks.length ? chunks[chunks.length - 1].charEnd : "n/a"));
+}
+
+/* ------------------------------------------------------------------ cache */
+
+function cacheChecks(check) {
+    const now = 1_000_000_000_000;
+
+    check("cache key separates models",
+        cacheKey({ contentHash: "abc", model: "claude-opus-5" }) !==
+        cacheKey({ contentHash: "abc", model: "claude-haiku-4-5" }),
+        "a Haiku reading could be served for an Opus request");
+
+    check("cache key separates concern sets",
+        cacheKey({ contentHash: "abc", model: "m", concerns: ["ai_training"] }) !==
+        cacheKey({ contentHash: "abc", model: "m", concerns: [] }),
+        "steering the prompt did not change the key");
+
+    check("cache key ignores concern ordering",
+        cacheKey({ contentHash: "abc", model: "m", concerns: ["b", "a"] }) ===
+        cacheKey({ contentHash: "abc", model: "m", concerns: ["a", "b"] }),
+        "reordering preferences caused a spurious miss");
+
+    // Expiry.
+    const aged = [
+        { key: "old", storedAt: now - TTL_MS - 1, lastUsed: now, bytes: 10 },
+        { key: "fresh", storedAt: now - 1000, lastUsed: now, bytes: 10 }
+    ];
+
+    const expired = selectEvictions(aged, now);
+
+    check("expired entries are evicted",
+        expired.evict.length === 1 && expired.evict[0].key === "old",
+        "evicted " + JSON.stringify(expired.evict.map((e) => e.key)));
+
+    check("fresh entries survive expiry",
+        expired.keep.length === 1 && expired.keep[0].key === "fresh",
+        "kept " + JSON.stringify(expired.keep.map((e) => e.key)));
+
+    // Size pressure: least-recently-used goes first.
+    const big = [
+        { key: "stale", storedAt: now, lastUsed: now - 5000, bytes: 60 },
+        { key: "recent", storedAt: now, lastUsed: now - 10, bytes: 60 }
+    ];
+
+    const pressured = selectEvictions(big, now, 100);
+
+    check("over the size cap, least-recently-used is evicted",
+        pressured.evict.length === 1 && pressured.evict[0].key === "stale",
+        "evicted " + JSON.stringify(pressured.evict.map((e) => e.key)));
+
+    check("eviction stops once the cache fits",
+        pressured.bytes <= 100 && pressured.keep.length === 1,
+        "bytes " + pressured.bytes + " keep " + pressured.keep.length);
+
+    const roomy = selectEvictions(big, now, 1000);
+
+    check("nothing is evicted when there is room",
+        roomy.evict.length === 0, "evicted " + roomy.evict.length);
 }

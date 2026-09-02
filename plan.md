@@ -2,7 +2,7 @@
 
 A Firefox extension that reads Terms of Service / Privacy Policies and tells you what to be cautious about, **before** you click "I agree".
 
-Status: **Phases 1-3 complete.** Detection, extraction, the rules engine and the AI pass total 50/50 across the fixture corpus, the negation suite and the grounding/merge/chunking suite; `web-ext lint` is clean. Tier 1 runs offline on every policy; tier 2 is opt-in, BYO-key, and every AI finding must cite text that actually appears on the page. Phases 1-2 confirmed working in Firefox; the tier-2 path has not been exercised against the live API.
+Status: **Phases 1-4 complete.** 63/63 across the fixture corpus, the negation suite, the grounding/merge/chunking suite and the fetched-parse suite; `web-ext lint` is clean. Tier 1 runs offline on every policy; tier 2 is opt-in, BYO-key, cached, and every AI finding must cite text that actually appears on the page. A policy linked from a signup form can be read without opening it. Confirmed working in Firefox through tier 2.
 
 ---
 
@@ -239,11 +239,36 @@ This is the cheapest useful safety property in the whole project: no extra reque
 - **The key is stored unencrypted** in extension storage, and the settings page says so rather than implying otherwise. The hosted proxy in Phase 6 is the actual fix.
 - **A settings race, found and fixed here**: `updateSettings` was a read-modify-write of one object, so two quick changes clobbered each other — ticking the consent box and changing the model lost the consent. Writes are now serialised through a queue. Worth remembering for any other shared stored object.
 
-### Phase 4 — Caching, cost control, pre-agreement warning
+### Phase 4 — Caching, cost control, pre-agreement warning — **done**
+
+`lib/cache.js` keys AI results by content hash, model and concern set; the popup offers "Show AI analysis" instead of a price when a result is already cached. Policies linked from a signup form can be checked in place.
+
 
 - **Cache**: key on `sha256(hostname + normalizedText)` in `storage.local`. Policies change maybe twice a year; the same user hitting the same site should never pay twice. TTL 30 days, LRU-evict at ~5 MB. Expect a high hit rate once a handful of large sites are cached — this is what makes the LLM tier affordable at all.
 - **Never auto-call the LLM.** Tier 1 runs automatically; tier 2 requires a click ("Deep analysis") unless the user opts into auto-analysis, and even then only for cache misses. Show an estimated token count/cost before the call.
 - **Pre-agreement detection**: on any page, scan for links whose text matches terms/privacy patterns near a checkbox or submit button. If found, offer to fetch and analyze the linked policy in the background (respecting the cache) and show the floating badge from mockup 4 *on the signup page*. Fetching a third-party URL needs `host_permissions` — request it optionally, at the moment of use, via `browser.permissions.request()` rather than up front.
+
+#### How the pre-agreement check ended up working
+
+The plan left the mechanism open. The obvious options were to open the policy in a background tab (real rendering, but a visible tab and every tracker on the page fires) or to fetch and parse the HTML directly. Fetching won on privacy: `credentials: "omit"` sends no cookies, and `DOMParser` runs no scripts and loads no subresources, so the site cannot tell the policy was read.
+
+The catch is that a `DOMParser` document has no layout, so `getComputedStyle` is unavailable and visibility filtering is skipped. That turned out not to matter — across all five real policies the fetched read recovers **100%** of the words the rendered read finds, Apple's collapsed accordions included, because those are hidden structurally rather than by CSS. The path is flagged `unrendered` regardless, since a site that hides content only with CSS would over-extract.
+
+Parsing happens in the content script rather than the background, because that is where a DOM and the extraction code already are. The alternative was converting the content scripts to ES modules so the background could import them — a refactor with real breakage risk against a working extension, for no gain.
+
+#### Cache design
+
+Keyed on `contentHash | model | concerns`. All three belong in the key: a Haiku reading should not be served to someone who has since switched to Opus, and the concern list changes what the model is asked to look for. Concerns are sorted first so reordering preferences is not a spurious miss.
+
+Only the tier-2 half is cached. Rule findings are recomputed on every view, so editing `patterns.json` can never be masked by a stale entry — and tier 1 is fast enough that caching it would buy nothing.
+
+Eviction is expiry first (30 days), then least-recently-used down to 5 MB. `selectEvictions` is pure and tested; the storage wrapper around it is not, which is the right split.
+
+#### Still open at the end of Phase 4
+
+- **The in-page badge is still Phase 5.** The pre-agreement check currently lives in the popup, so it only helps someone who thinks to open it. The mockup-4 floating badge is what makes it work unprompted, and that is the remaining half of this idea.
+- **Nothing prompts a check automatically.** Detection of an agreement-adjacent policy link is passive. Auto-fetching on page load would be faster but would mean reaching out to third-party sites without being asked, which needs its own consent decision.
+- **`*://*/*` is now an optional host permission**, so any specific origin can be requested at the moment a user asks for it. Firefox shows that prompt per site; nothing is granted up front.
 
 ### Phase 5 — Full UI
 
@@ -306,7 +331,7 @@ Two caveats to keep in mind when reading results: fixtures are static HTML, so a
 3. ~~Fixture corpus + tests.~~ **Done**, pulled forward from step 4 — Phase 1 could not be called finished without something to verify it against, and the corpus immediately found two real bugs.
 4. ~~Phase 2 rules engine + the popup list UI.~~ **Done** — and worth showing someone.
 5. ~~Phase 3 LLM behind a feature flag.~~ **Done** — opt-in, off by default, and gated behind an explicit consent tick.
-6. Cache, then cost controls, then the signup-page badge.
+6. ~~Cache, then cost controls, then the signup-page check.~~ **Done** — the badge itself is Phase 5.
 7. Preferences, polish, AMO submission.
 
 Phases 1–2 alone are a genuinely useful extension. Ship that, then add intelligence.

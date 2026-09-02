@@ -15,6 +15,7 @@ import { analysePolicy, estimateCost, API_ORIGIN, LlmError } from "./analysis/ll
 import { verifyFindings } from "./analysis/verify.js";
 import { mergeFindings } from "./analysis/merge.js";
 import { getSettings, getApiKey, getTabAnalysis, setTabAnalysis, clearTabAnalysis } from "./lib/storage.js";
+import { cacheKey, readCache, writeCache, cacheStats, clearCache } from "./lib/cache.js";
 
 /** Kept in sync with the content_scripts entry in the manifest. */
 const CONTENT_FILES = [
@@ -136,13 +137,15 @@ async function scanTab(tabId) {
         }
     }
 
+    const hash = payload.extraction.wordCount > 0
+        ? await contentHash(payload.hostname, payload.fullText)
+        : null;
+
     const analysis = createAnalysis({
         url: payload.url,
         hostname: payload.hostname,
         analyzedAt: new Date().toISOString(),
-        contentHash: payload.extraction.wordCount > 0
-            ? await contentHash(payload.hostname, payload.fullText)
-            : null,
+        contentHash: hash,
         riskLevel: riskLevelFromFindings(ruleFindings),
         summary: "",
         findings: ruleFindings,
@@ -162,7 +165,8 @@ async function scanTab(tabId) {
         // Kept pristine so a repeated deep analysis merges against tier 1
         // rather than against its own previous output.
         ruleFindings,
-        deep: await describeDeepAvailability(payload),
+        deep: await describeDeepAvailability(payload, hash),
+        linked: {},
         analysis
     };
 
@@ -177,7 +181,7 @@ async function scanTab(tabId) {
  * Everything the popup needs to decide what to offer, computed up front so the
  * button is never shown in a state that cannot work.
  */
-async function describeDeepAvailability(payload) {
+async function describeDeepAvailability(payload, hash) {
     const settings = await getSettings();
     const apiKey = await getApiKey();
 
@@ -207,9 +211,20 @@ async function describeDeepAvailability(payload) {
         }
     }
 
+    // A cache hit means the button costs nothing, which changes what it should
+    // say -- so the popup needs to know before it is drawn.
+    let cached = false;
+
+    if (available && hash) {
+        const key = cacheKey({ contentHash: hash, model: settings.model, concerns: settings.concerns });
+
+        cached = (await readCache(key)) !== null;
+    }
+
     return {
         status: "idle",
         available,
+        cached,
         blockedReason,
         needsPermission: available && !hasPermission,
         model: settings.model,
@@ -245,25 +260,59 @@ async function runDeepAnalysis(tabId, settings, apiKey) {
         return;
     }
 
-    const result = await analysePolicy({
-        text: payload.fullText,
-        sections: payload.extraction.sections,
-        apiKey,
-        workspaceId: settings.workspaceId,
-        model: settings.model,
-        effort: settings.effort || undefined,
-        context: {
-            hostname: payload.hostname,
-            docType: payload.detection.docType,
-            concerns: settings.concerns
-        },
-        onProgress: (progress) => {
-            patchDeep(tabId, { progress: { chunk: progress.chunk, chunks: progress.chunks } });
-        }
-    });
+    const hash = await contentHash(payload.hostname, payload.fullText);
+    const key = cacheKey({ contentHash: hash, model: settings.model, concerns: settings.concerns });
 
-    // Nothing the model says survives without a quote we can find in the page.
-    const verified = verifyFindings(result.findings, payload.fullText);
+    // Cache first. The same policy re-read on a later visit should never be
+    // paid for twice, and this is what makes tier 2 affordable at all.
+    const hit = await readCache(key);
+
+    let result;
+    let verified;
+    let fromCache = false;
+
+    if (hit) {
+        result = hit.value;
+        verified = { findings: result.findings, dropped: result.dropped ?? [], stats: result.verifyStats };
+        fromCache = true;
+    } else {
+        result = await analysePolicy({
+            text: payload.fullText,
+            sections: payload.extraction.sections,
+            apiKey,
+            workspaceId: settings.workspaceId,
+            model: settings.model,
+            effort: settings.effort || undefined,
+            context: {
+                hostname: payload.hostname,
+                docType: payload.detection.docType,
+                concerns: settings.concerns
+            },
+            onProgress: (progress) => {
+                patchDeep(tabId, { progress: { chunk: progress.chunk, chunks: progress.chunks } });
+            }
+        });
+
+        // Nothing the model says survives without a quote we can find in the page.
+        verified = verifyFindings(result.findings, payload.fullText);
+
+        // Cache the verified half only. Rule findings are recomputed every time
+        // so that a patterns.json change is never served from a stale entry.
+        await writeCache(
+            key,
+            {
+                findings: verified.findings,
+                dropped: verified.dropped,
+                verifyStats: verified.stats,
+                riskLevel: result.riskLevel,
+                summary: result.summary,
+                usage: result.usage,
+                chunks: result.chunks,
+                model: result.model
+            },
+            { hostname: payload.hostname, model: settings.model }
+        );
+    }
 
     const report = await getTabAnalysis(tabId);
     const ruleFindings = report?.ruleFindings ?? [];
@@ -283,6 +332,8 @@ async function runDeepAnalysis(tabId, settings, apiKey) {
         status: "done",
         progress: null,
         error: null,
+        cached: fromCache,
+        cachedAt: fromCache ? hit.storedAt : null,
         stats: {
             ...merged.stats,
             quotesChecked: verified.stats.checked,
@@ -292,7 +343,8 @@ async function runDeepAnalysis(tabId, settings, apiKey) {
             dropped: verified.dropped,
             usage: result.usage,
             chunks: result.chunks,
-            model: result.model
+            model: result.model,
+            fromCache
         }
     };
 
@@ -328,6 +380,154 @@ async function startDeepAnalysis(tabId) {
     return { started: true };
 }
 
+/* -------------------------------------------------- linked policies (P4) */
+
+/** A policy page that will not fit in a reasonable fetch is not worth reading. */
+const MAX_LINKED_BYTES = 3 * 1024 * 1024;
+
+async function patchLinked(tabId, href, patch) {
+    const report = await getTabAnalysis(tabId);
+
+    if (!report) {
+        return;
+    }
+
+    report.linked = report.linked ?? {};
+    report.linked[href] = { ...(report.linked[href] ?? {}), ...patch };
+
+    await setTabAnalysis(tabId, report);
+}
+
+/**
+ * Read a policy that is linked from the current page without navigating to it.
+ *
+ * This is the point of the whole extension: nobody opens a 12,000-word terms
+ * document voluntarily, but they will glance at a summary while a signup form
+ * is still in front of them.
+ *
+ * The fetch sends no cookies and DOMParser runs no scripts, so the site cannot
+ * tell the policy was read, and none of its trackers fire.
+ */
+async function checkLinkedPolicy(tabId, href) {
+    await patchLinked(tabId, href, { status: "running", error: null });
+
+    let origin;
+
+    try {
+        origin = new URL(href).origin + "/*";
+    } catch (error) {
+        await patchLinked(tabId, href, { status: "error", error: "That link is not a valid address." });
+        return;
+    }
+
+    if (!(await browser.permissions.contains({ origins: [origin] }))) {
+        await patchLinked(tabId, href, {
+            status: "error",
+            error: "Policy Guard needs permission to read that site."
+        });
+        return;
+    }
+
+    let html;
+
+    try {
+        const response = await fetch(href, { credentials: "omit", redirect: "follow" });
+
+        if (!response.ok) {
+            await patchLinked(tabId, href, {
+                status: "error",
+                error: `The policy page returned ${response.status}.`
+            });
+            return;
+        }
+
+        html = await response.text();
+    } catch (error) {
+        await patchLinked(tabId, href, { status: "error", error: "Could not fetch that page." });
+        return;
+    }
+
+    if (html.length > MAX_LINKED_BYTES) {
+        await patchLinked(tabId, href, { status: "error", error: "That page is too large to read." });
+        return;
+    }
+
+    // Parsing needs a DOM, and the content script already has one plus the
+    // extraction code loaded, so the work happens there rather than here.
+    await ensureContentScript(tabId);
+
+    const response = await browser.tabs.sendMessage(tabId, {
+        type: "PG_SCAN_HTML",
+        html,
+        url: href
+    });
+
+    if (!response || !response.ok) {
+        await patchLinked(tabId, href, { status: "error", error: "Could not read that page's text." });
+        return;
+    }
+
+    const payload = response.payload;
+
+    if (!payload.detection.isPolicy) {
+        await patchLinked(tabId, href, {
+            status: "done",
+            isPolicy: false,
+            error: null,
+            wordCount: payload.extraction.wordCount,
+            findings: [],
+            counts: null
+        });
+        return;
+    }
+
+    let findings = [];
+
+    try {
+        const settings = await getSettings();
+        const rules = await loadRules();
+
+        findings = runRules(payload.fullText, rules, { concerns: settings.concerns }).findings;
+    } catch (error) {
+        console.warn("Policy Guard: rules engine failed on linked policy -", error);
+    }
+
+    await patchLinked(tabId, href, {
+        status: "done",
+        isPolicy: true,
+        error: null,
+        title: payload.title,
+        docType: payload.detection.docType,
+        wordCount: payload.extraction.wordCount,
+        riskLevel: riskLevelFromFindings(findings),
+        counts: summarize(findings),
+        findings
+    });
+}
+
+const linkedInFlight = new Set();
+
+function startLinkedCheck(tabId, href) {
+    const token = tabId + "|" + href;
+
+    if (linkedInFlight.has(token)) {
+        return Promise.resolve({ started: false });
+    }
+
+    linkedInFlight.add(token);
+
+    checkLinkedPolicy(tabId, href)
+        .catch(async (error) => {
+            await patchLinked(tabId, href, {
+                status: "error",
+                error: String(error && error.message ? error.message : error)
+            });
+        })
+        .finally(() => linkedInFlight.delete(token));
+
+    return Promise.resolve({ started: true });
+}
+
 /* ---------------------------------------------------------------- messages */
 
 async function handleGetReport(tabId, force) {
@@ -360,6 +560,15 @@ browser.runtime.onMessage.addListener((message, sender) => {
 
         case "DEEP_ANALYZE":
             return startDeepAnalysis(message.tabId);
+
+        case "CHECK_LINK":
+            return startLinkedCheck(message.tabId, message.href);
+
+        case "CACHE_STATS":
+            return cacheStats();
+
+        case "CLEAR_CACHE":
+            return clearCache();
 
         case "GET_PAGE_TEXT":
             return scanPayload(message.tabId).then((p) => (p ? p.fullText : null));

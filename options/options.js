@@ -24,6 +24,8 @@ const els = {
     permissionPanel: document.querySelector("#permissionPanel"),
     grantPermission: document.querySelector("#grantPermission"),
     concerns: document.querySelector("#concerns"),
+    cacheStats: document.querySelector("#cacheStats"),
+    clearCache: document.querySelector("#clearCache"),
     saved: document.querySelector("#saved")
 };
 
@@ -113,6 +115,34 @@ function syncDisclosureVisibility(enabled) {
     els.disclosure.style.display = enabled ? "" : "none";
 }
 
+function formatBytes(bytes) {
+    if (bytes < 1024) {
+        return bytes + " B";
+    }
+
+    if (bytes < 1024 * 1024) {
+        return Math.round(bytes / 1024) + " KB";
+    }
+
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+async function refreshCacheStats() {
+    const stats = await browser.runtime.sendMessage({ type: "CACHE_STATS" });
+
+    if (!stats || stats.entries === 0) {
+        els.cacheStats.textContent = "Nothing cached yet.";
+        els.clearCache.disabled = true;
+        return;
+    }
+
+    els.clearCache.disabled = false;
+    els.cacheStats.textContent =
+        `${stats.entries} ${stats.entries === 1 ? "policy" : "policies"} cached, ` +
+        `${formatBytes(stats.bytes)}. ` +
+        `Reused ${stats.hits} ${stats.hits === 1 ? "time" : "times"} so far.`;
+}
+
 async function init() {
     const settings = await getSettings();
     const key = await getApiKey();
@@ -127,6 +157,7 @@ async function init() {
     buildConcerns(settings.concerns);
     syncDisclosureVisibility(settings.llmEnabled);
     await refreshPermissionPanel();
+    await refreshCacheStats();
 }
 
 /* ----------------------------------------------------------------- events */
@@ -198,6 +229,12 @@ els.grantPermission.addEventListener("click", async () => {
     }
 
     await refreshPermissionPanel();
+});
+
+els.clearCache.addEventListener("click", async () => {
+    await browser.runtime.sendMessage({ type: "CLEAR_CACHE" });
+    await refreshCacheStats();
+    flashSaved();
 });
 
 init();

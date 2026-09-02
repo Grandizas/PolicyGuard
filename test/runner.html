@@ -33,6 +33,9 @@
 <h2>4. Quote grounding, merge, chunking</h2>
 <pre id="analysis">Running...</pre>
 
+<h2>5. Reading a linked policy without opening it</h2>
+<pre id="linked">Running...</pre>
+
 <h2>Summary</h2>
 <pre id="summary">Running…</pre>
 
@@ -40,6 +43,7 @@
 
 <script src="../content/detect.js"></script>
 <script src="../content/extract.js"></script>
+<script src="../content/content.js"></script>
 <script type="module">
     import { compileRules, runRules } from "../analysis/rules.js";
     import { runAnalysisSuite } from "./analysis-suite.js";
@@ -289,6 +293,43 @@
     );
 
     document.querySelector("#analysis").textContent = analysisLines.join("\n");
+
+    /* ------------------------------- 5. unrendered (fetched) parsing path */
+
+    const linkedLines = [];
+
+    for (const testCase of cases.filter((c) => c.expect.isPolicy)) {
+        const html = await (await fetch("fixtures/" + testCase.file, noStore)).text();
+        const payload = PolicyGuard.scanHtml(html, testCase.url);
+        const problems = [];
+
+        if (!payload.detection.isPolicy) {
+            problems.push("not detected as a policy when read unrendered");
+        }
+
+        if (!payload.extraction.unrendered) {
+            problems.push("missing the unrendered flag");
+        }
+
+        // A fetched read has no layout, so it will differ from the rendered
+        // one; it must still recover the bulk of the document.
+        const rendered = analysed.find((a) => a.testCase.file === testCase.file).extraction.wordCount;
+        const ratio = rendered > 0 ? payload.extraction.wordCount / rendered : 0;
+
+        if (ratio < 0.5) {
+            problems.push("recovered only " + Math.round(ratio * 100) + "% of the rendered words");
+        }
+
+        linkedLines.push(
+            pad(testCase.file.replace(".html", ""), 26) +
+            pad(payload.extraction.wordCount + " words", 14) +
+            pad("vs rendered " + rendered, 20) +
+            pad(Math.round(ratio * 100) + "%", 6) +
+            record(problems)
+        );
+    }
+
+    document.querySelector("#linked").textContent = linkedLines.join("\n");
 
     /* ------------------------------------------------------------- summary */
 

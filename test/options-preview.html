@@ -15,6 +15,7 @@
 <script type="module">
     const store = { settings: {}, apiKey: "" };
     const granted = new Set();
+    const fakeCache = { cleared: false };
 
     globalThis.browser = {
         storage: {
@@ -40,6 +41,22 @@
                         delete store[k];
                     }
                 }
+            }
+        },
+        runtime: {
+            async sendMessage(message) {
+                if (message.type === "CACHE_STATS") {
+                    return fakeCache.cleared
+                        ? { entries: 0, bytes: 0, expired: 0, hits: 0, newest: 0 }
+                        : { entries: 3, bytes: 48120, expired: 1, hits: 7, newest: Date.now() };
+                }
+
+                if (message.type === "CLEAR_CACHE") {
+                    fakeCache.cleared = true;
+                    return 3;
+                }
+
+                return null;
             }
         },
         permissions: {

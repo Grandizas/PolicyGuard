@@ -461,3 +461,18 @@ ul.dropped {
     font-size: 10px;
     font-weight: 600;
 }
+
+button.primary.small {
+    width: auto;
+    margin-top: 6px;
+    padding: 5px 10px;
+    font-size: 11px;
+}
+
+ul.links li .risk-head {
+    margin: 8px 0 4px;
+}
+
+ul.links li .findings {
+    margin-bottom: 4px;
+}
