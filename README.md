@@ -1,3 +1,12 @@
+Pop up inside terms page
+<img width="320" height="426" alt="Screenshot 2026-09-02 at 17-37-22 Meta Terms of Service" src="https://github.com/user-attachments/assets/2da66baf-d16e-4c98-8ad4-6876df4d059b" />
+
+Settings page
+<img width="1904" height="1089" alt="Screenshot 2026-09-02 at 17-36-55 Policy Guard is installed" src="https://github.com/user-attachments/assets/8fdfc9a8-d0fc-46ef-9e26-8a5471df090b" />
+
+Pop up when trying to sign up
+<img width="320" height="295" alt="Screenshot 2026-09-02 at 17-43-31 Signup" src="https://github.com/user-attachments/assets/e4f68258-2724-42bb-a028-f31a3f18109f" />
+
 # Policy Guard
 
 A Firefox extension that reads Terms of Service and Privacy Policies and tells
