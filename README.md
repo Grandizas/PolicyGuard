@@ -2,6 +2,9 @@
 <img width="320" height="295" alt="Screenshot 2026-09-02 at 17-43-31 Signup" src="https://github.com/user-attachments/assets/e4f68258-2724-42bb-a028-f31a3f18109f" />
 <img width="1904" height="1089" alt="Screenshot 2026-09-02 at 17-36-55 Policy Guard is installed" src="https://github.com/user-attachments/assets/8fdfc9a8-d0fc-46ef-9e26-8a5471df090b" />
 
+#1 Screenshot Pop up inside terms page
+#2 Screenshot Pop up when trying to sign up
+#3 Screenshot Install page
 
 # Policy Guard
 
