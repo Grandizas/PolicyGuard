@@ -1,0 +1,39 @@
+body {
+    width: 300px;
+    padding: 16px;
+
+    font-family: Arial, sans-serif;
+
+    background: #111;
+    color: #fff;
+}
+
+h1 {
+    margin-top: 0;
+    font-size: 20px;
+}
+
+#status {
+    color: #aaa;
+    line-height: 1.5;
+}
+
+button {
+    width: 100%;
+
+    padding: 10px;
+
+    border: none;
+    border-radius: 6px;
+
+    background: white;
+    color: black;
+
+    font-weight: 600;
+
+    cursor: pointer;
+}
+
+button:hover {
+    background: #ddd;
+}
