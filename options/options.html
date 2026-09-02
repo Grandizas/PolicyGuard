@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Policy Guard settings</title>
+    <link rel="stylesheet" href="options.css">
+</head>
+<body>
+
+<main>
+    <h1>Policy Guard</h1>
+
+    <section>
+        <h2>How it reads policies</h2>
+
+        <p class="lede">
+            Policy Guard always runs a pattern-matching pass. It is instant, costs
+            nothing, and never sends anything anywhere. Deep analysis is optional
+            and adds a language model on top.
+        </p>
+    </section>
+
+    <section>
+        <h2>Deep analysis</h2>
+
+        <label class="row">
+            <input type="checkbox" id="llmEnabled">
+            <span>
+                <b>Enable deep analysis</b>
+                <small>Adds an AI reading pass on top of pattern matching.</small>
+            </span>
+        </label>
+
+        <div class="panel warn" id="disclosure">
+            <h3>What this sends, and where</h3>
+            <p>
+                When you run a deep analysis, <b>the text of the policy page you are
+                on is sent to Anthropic's API</b> and analysed there. Nothing is sent
+                until you press the button on a page — there is no background
+                uploading, and pattern matching keeps working without this.
+            </p>
+            <p>
+                Your API key is stored in this browser's extension storage.
+                <b>It is not encrypted.</b> Anything that can read your Firefox
+                profile — you, other software running as you, someone with your
+                unlocked machine — can read it. Use a key you are willing to
+                rotate, and set a spend limit on it in the Anthropic console.
+            </p>
+            <label class="row">
+                <input type="checkbox" id="networkDisclosureAccepted">
+                <span>I understand page text will be sent to Anthropic.</span>
+            </label>
+        </div>
+
+        <label class="field">
+            <span class="label">API key</span>
+            <input type="password" id="apiKey" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+            <small>
+                Create one at console.anthropic.com. Stored locally, sent only to
+                api.anthropic.com.
+            </small>
+        </label>
+
+        <div class="row-actions">
+            <button type="button" id="toggleKey" class="ghost">Show key</button>
+            <button type="button" id="clearKey" class="ghost danger">Remove key</button>
+        </div>
+
+        <label class="field">
+            <span class="label">Workspace ID <span class="optional">(only for workspace keys)</span></span>
+            <input type="text" id="workspaceId" placeholder="wrkspc_..." autocomplete="off" spellcheck="false">
+            <small>
+                Leave this blank unless the API replies that
+                <code>anthropic-workspace-id</code> is required. Keys created inside
+                a workspace need it; personal keys do not. Find it in the Anthropic
+                console under that workspace's settings, or in its URL.
+            </small>
+        </label>
+
+        <label class="field">
+            <span class="label">Model</span>
+            <select id="model"></select>
+            <small id="modelNote"></small>
+        </label>
+
+        <label class="field">
+            <span class="label">Reasoning effort</span>
+            <select id="effort">
+                <option value="">Default</option>
+                <option value="low">Low — cheapest, most likely to miss things</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="xhigh">Very high</option>
+                <option value="max">Maximum — slowest and most expensive</option>
+            </select>
+            <small>Lower effort costs less and reads less carefully.</small>
+        </label>
+
+        <div class="panel" id="permissionPanel" hidden>
+            <p>
+                Policy Guard needs permission to reach <code>api.anthropic.com</code>.
+            </p>
+            <button type="button" id="grantPermission">Grant access</button>
+        </div>
+    </section>
+
+    <section>
+        <h2>What you care about</h2>
+
+        <p class="lede">
+            Tick the things you want flagged. Leave everything unticked to see all
+            of it. This filters what you are shown and pushes your choices to the
+            top; it also tells the AI pass where to look hardest.
+        </p>
+
+        <div id="concerns" class="concerns"></div>
+    </section>
+
+    <p class="saved" id="saved" hidden>Saved</p>
+
+    <footer>
+        Policy Guard is informational only and is not legal advice.
+    </footer>
+</main>
+
+<script type="module" src="options.js"></script>
+
+</body>
+</html>

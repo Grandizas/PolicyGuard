@@ -2,15 +2,19 @@
  * Orchestrator.
  *
  * All logic lives here because the popup is destroyed the moment it closes --
- * anything it owns dies with it. The background is an event page and can itself
- * be evicted, so results are persisted to session storage as they are produced
- * rather than held in memory.
+ * anything it owns dies with it. That matters most for tier 2: an LLM call can
+ * take a minute, and the user will close the popup during it. The job runs
+ * here, writes progress to session storage as it goes, and the popup simply
+ * reads whatever the current state is.
  */
 
 import { createAnalysis, riskLevelFromFindings } from "./lib/schema.js";
 import { contentHash } from "./lib/hash.js";
 import { compileRules, runRules, summarize } from "./analysis/rules.js";
-import { getSettings, getTabAnalysis, setTabAnalysis, clearTabAnalysis } from "./lib/storage.js";
+import { analysePolicy, estimateCost, API_ORIGIN, LlmError } from "./analysis/llm.js";
+import { verifyFindings } from "./analysis/verify.js";
+import { mergeFindings } from "./analysis/merge.js";
+import { getSettings, getApiKey, getTabAnalysis, setTabAnalysis, clearTabAnalysis } from "./lib/storage.js";
 
 /** Kept in sync with the content_scripts entry in the manifest. */
 const CONTENT_FILES = [
@@ -51,6 +55,8 @@ function loadRules() {
     return rulesPromise;
 }
 
+/* ------------------------------------------------------------ content link */
+
 async function pingTab(tabId) {
     try {
         const response = await browser.tabs.sendMessage(tabId, { type: "PG_PING" });
@@ -79,6 +85,21 @@ async function ensureContentScript(tabId) {
     return pingTab(tabId);
 }
 
+/** Full page text is never cached -- it is large, and the tab still has it. */
+async function scanPayload(tabId) {
+    const ready = await ensureContentScript(tabId);
+
+    if (!ready) {
+        return null;
+    }
+
+    const response = await browser.tabs.sendMessage(tabId, { type: "PG_SCAN" });
+
+    return response && response.ok ? response.payload : null;
+}
+
+/* ----------------------------------------------------------------- tier 1 */
+
 async function scanTab(tabId) {
     const tab = await browser.tabs.get(tabId);
 
@@ -89,28 +110,17 @@ async function scanTab(tabId) {
         };
     }
 
-    const ready = await ensureContentScript(tabId);
+    const payload = await scanPayload(tabId);
 
-    if (!ready) {
+    if (!payload) {
         return {
             supported: false,
             reason: "This page blocks extensions from reading its content."
         };
     }
 
-    const response = await browser.tabs.sendMessage(tabId, { type: "PG_SCAN" });
-
-    if (!response || !response.ok) {
-        return {
-            supported: false,
-            reason: response ? response.error : "The page did not respond."
-        };
-    }
-
-    const payload = response.payload;
-
     // Tier 1 runs on every policy: it is free, offline, and needs no consent.
-    let findings = [];
+    let ruleFindings = [];
     let ruleStats = null;
 
     if (payload.detection.isPolicy) {
@@ -119,7 +129,7 @@ async function scanTab(tabId) {
             const rules = await loadRules();
             const result = runRules(payload.fullText, rules, { concerns: settings.concerns });
 
-            findings = result.findings;
+            ruleFindings = result.findings;
             ruleStats = result.stats;
         } catch (error) {
             console.warn("Policy Guard: rules engine failed -", error);
@@ -133,9 +143,9 @@ async function scanTab(tabId) {
         contentHash: payload.extraction.wordCount > 0
             ? await contentHash(payload.hostname, payload.fullText)
             : null,
-        riskLevel: riskLevelFromFindings(findings),
+        riskLevel: riskLevelFromFindings(ruleFindings),
         summary: "",
-        findings,
+        findings: ruleFindings,
         tiers: { rules: ruleStats !== null, llm: false },
         truncated: false,
         detection: payload.detection,
@@ -147,8 +157,12 @@ async function scanTab(tabId) {
         title: payload.title,
         preview: payload.preview,
         policyLinks: payload.policyLinks ?? [],
-        counts: summarize(findings),
+        counts: summarize(ruleFindings),
         ruleStats,
+        // Kept pristine so a repeated deep analysis merges against tier 1
+        // rather than against its own previous output.
+        ruleFindings,
+        deep: await describeDeepAvailability(payload),
         analysis
     };
 
@@ -157,41 +171,164 @@ async function scanTab(tabId) {
     return report;
 }
 
+/* ----------------------------------------------------------------- tier 2 */
+
 /**
- * Full page text is deliberately not cached -- it is large and the tab can
- * always be asked again. Phase 2 will call this from the rules engine.
+ * Everything the popup needs to decide what to offer, computed up front so the
+ * button is never shown in a state that cannot work.
  */
-async function getPageText(tabId) {
-    await ensureContentScript(tabId);
+async function describeDeepAvailability(payload) {
+    const settings = await getSettings();
+    const apiKey = await getApiKey();
 
-    const response = await browser.tabs.sendMessage(tabId, { type: "PG_SCAN" });
+    let hasPermission = false;
 
-    if (!response || !response.ok) {
-        return null;
+    try {
+        hasPermission = await browser.permissions.contains({ origins: [API_ORIGIN] });
+    } catch (error) {
+        hasPermission = false;
     }
 
-    return response.payload.fullText;
+    const available =
+        payload.detection.isPolicy &&
+        settings.llmEnabled &&
+        settings.networkDisclosureAccepted &&
+        Boolean(apiKey);
+
+    let blockedReason = null;
+
+    if (payload.detection.isPolicy && !available) {
+        if (!settings.llmEnabled) {
+            blockedReason = "Deep analysis is switched off in settings.";
+        } else if (!apiKey) {
+            blockedReason = "Add an API key in settings to use deep analysis.";
+        } else {
+            blockedReason = "Deep analysis needs your consent in settings before it can send page text.";
+        }
+    }
+
+    return {
+        status: "idle",
+        available,
+        blockedReason,
+        needsPermission: available && !hasPermission,
+        model: settings.model,
+        estimate: payload.detection.isPolicy
+            ? estimateCost(payload.fullText, settings.model)
+            : null,
+        progress: null,
+        error: null,
+        stats: null
+    };
 }
 
-browser.runtime.onMessage.addListener((message, sender) => {
-    if (!message || typeof message.type !== "string") {
-        return undefined;
+const inFlight = new Map();
+
+async function patchDeep(tabId, patch) {
+    const report = await getTabAnalysis(tabId);
+
+    if (!report) {
+        return;
     }
 
-    switch (message.type) {
-        case "GET_REPORT":
-            return handleGetReport(message.tabId, false);
+    report.deep = { ...report.deep, ...patch };
+    await setTabAnalysis(tabId, report);
+}
 
-        case "RESCAN":
-            return handleGetReport(message.tabId, true);
+async function runDeepAnalysis(tabId, settings, apiKey) {
+    await patchDeep(tabId, { status: "running", error: null, progress: { chunk: 1, chunks: 1 } });
 
-        case "GET_PAGE_TEXT":
-            return getPageText(message.tabId);
+    const payload = await scanPayload(tabId);
 
-        default:
-            return undefined;
+    if (!payload) {
+        await patchDeep(tabId, { status: "error", error: "Could not read the page again." });
+        return;
     }
-});
+
+    const result = await analysePolicy({
+        text: payload.fullText,
+        sections: payload.extraction.sections,
+        apiKey,
+        workspaceId: settings.workspaceId,
+        model: settings.model,
+        effort: settings.effort || undefined,
+        context: {
+            hostname: payload.hostname,
+            docType: payload.detection.docType,
+            concerns: settings.concerns
+        },
+        onProgress: (progress) => {
+            patchDeep(tabId, { progress: { chunk: progress.chunk, chunks: progress.chunks } });
+        }
+    });
+
+    // Nothing the model says survives without a quote we can find in the page.
+    const verified = verifyFindings(result.findings, payload.fullText);
+
+    const report = await getTabAnalysis(tabId);
+    const ruleFindings = report?.ruleFindings ?? [];
+    const merged = mergeFindings(ruleFindings, verified.findings, { concerns: settings.concerns });
+
+    if (!report) {
+        return;
+    }
+
+    report.analysis.findings = merged.findings;
+    report.analysis.riskLevel = result.riskLevel ?? riskLevelFromFindings(merged.findings);
+    report.analysis.summary = result.summary ?? "";
+    report.analysis.tiers = { ...report.analysis.tiers, llm: true };
+    report.counts = summarize(merged.findings);
+    report.deep = {
+        ...report.deep,
+        status: "done",
+        progress: null,
+        error: null,
+        stats: {
+            ...merged.stats,
+            quotesChecked: verified.stats.checked,
+            quotesExact: verified.stats.exact,
+            quotesFuzzy: verified.stats.fuzzy,
+            quotesDropped: verified.stats.dropped,
+            dropped: verified.dropped,
+            usage: result.usage,
+            chunks: result.chunks,
+            model: result.model
+        }
+    };
+
+    await setTabAnalysis(tabId, report);
+}
+
+async function startDeepAnalysis(tabId) {
+    if (inFlight.has(tabId)) {
+        return { started: false, reason: "already running" };
+    }
+
+    const settings = await getSettings();
+    const apiKey = await getApiKey();
+
+    if (!settings.llmEnabled || !settings.networkDisclosureAccepted || !apiKey) {
+        return { started: false, reason: "Deep analysis is not set up." };
+    }
+
+    const job = runDeepAnalysis(tabId, settings, apiKey)
+        .catch(async (error) => {
+            const message = error instanceof LlmError
+                ? error.message
+                : `Deep analysis failed: ${error && error.message ? error.message : error}`;
+
+            await patchDeep(tabId, { status: "error", error: message, progress: null });
+        })
+        .finally(() => {
+            inFlight.delete(tabId);
+        });
+
+    inFlight.set(tabId, job);
+
+    return { started: true };
+}
+
+/* ---------------------------------------------------------------- messages */
 
 async function handleGetReport(tabId, force) {
     try {
@@ -208,6 +345,29 @@ async function handleGetReport(tabId, force) {
         return { supported: false, reason: String(error && error.message ? error.message : error) };
     }
 }
+
+browser.runtime.onMessage.addListener((message, sender) => {
+    if (!message || typeof message.type !== "string") {
+        return undefined;
+    }
+
+    switch (message.type) {
+        case "GET_REPORT":
+            return handleGetReport(message.tabId, false);
+
+        case "RESCAN":
+            return handleGetReport(message.tabId, true);
+
+        case "DEEP_ANALYZE":
+            return startDeepAnalysis(message.tabId);
+
+        case "GET_PAGE_TEXT":
+            return scanPayload(message.tabId).then((p) => (p ? p.fullText : null));
+
+        default:
+            return undefined;
+    }
+});
 
 // A navigation invalidates whatever we knew about the tab.
 browser.tabs.onUpdated.addListener((tabId, changeInfo) => {

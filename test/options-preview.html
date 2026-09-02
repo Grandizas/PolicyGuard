@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Policy Guard — options preview</title>
+</head>
+<body>
+
+<!--
+    Renders the real options page with the WebExtension APIs stubbed by an
+    in-memory store. The markup is fetched from options/options.html rather
+    than copied, so this harness cannot drift from the real thing.
+-->
+
+<script type="module">
+    const store = { settings: {}, apiKey: "" };
+    const granted = new Set();
+
+    globalThis.browser = {
+        storage: {
+            local: {
+                async get(key) {
+                    const wanted = typeof key === "string" ? [key] : Object.keys(key ?? {});
+                    const out = {};
+
+                    for (const k of wanted) {
+                        if (k in store) {
+                            out[k] = store[k];
+                        }
+                    }
+
+                    return out;
+                },
+                async set(items) {
+                    Object.assign(store, items);
+                    console.log("[stub] storage.set", JSON.stringify(items));
+                },
+                async remove(keys) {
+                    for (const k of [].concat(keys)) {
+                        delete store[k];
+                    }
+                }
+            }
+        },
+        permissions: {
+            async contains({ origins }) {
+                return origins.every((o) => granted.has(o));
+            },
+            async request({ origins }) {
+                origins.forEach((o) => granted.add(o));
+                console.log("[stub] permissions.request granted", origins);
+                return true;
+            }
+        }
+    };
+
+    const markup = await (await fetch("../options/options.html", { cache: "no-store" })).text();
+    const parsed = new DOMParser().parseFromString(markup, "text/html");
+
+    const styles = document.createElement("link");
+
+    styles.rel = "stylesheet";
+    styles.href = "../options/options.css";
+    document.head.append(styles);
+
+    for (const node of Array.from(parsed.body.children)) {
+        if (node.tagName !== "SCRIPT") {
+            document.body.append(document.importNode(node, true));
+        }
+    }
+
+    await import("../options/options.js");
+
+    globalThis.__previewReady = true;
+    globalThis.__store = store;
+</script>
+
+</body>
+</html>

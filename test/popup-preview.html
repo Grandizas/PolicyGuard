@@ -8,10 +8,15 @@
 
 <!--
     Renders the real popup against a real extraction, with the WebExtension APIs
-    stubbed. The popup markup is fetched from popup/popup.html rather than copied,
-    so this harness cannot drift from the real thing.
+    stubbed. The popup markup is fetched from popup/popup.html rather than
+    copied, so this harness cannot drift from the real thing.
 
-    Usage: popup-preview.html?fixture=apple-privacy.html
+    Usage: popup-preview.html?fixture=apple-privacy.html&deep=done
+      deep = off | idle | running | error | done
+
+    "done" is not faked at the UI layer: two synthetic model findings -- one
+    quoting the document, one invented -- are put through the real verify and
+    merge pipeline, so the screen shows what those modules actually produce.
 -->
 
 <script src="../content/detect.js"></script>
@@ -19,14 +24,20 @@
 <script type="module">
     import { compileRules, runRules, summarize } from "../analysis/rules.js";
     import { riskLevelFromFindings } from "../lib/schema.js";
+    import { verifyFindings } from "../analysis/verify.js";
+    import { mergeFindings } from "../analysis/merge.js";
+    import { estimateCost } from "../analysis/llm.js";
 
     const params = new URLSearchParams(location.search);
     const fixtureFile = params.get("fixture") ?? "apple-privacy.html";
+    const deepMode = params.get("deep") ?? "idle";
 
-    const cases = await (await fetch("fixtures/index.json")).json();
+    const noStore = { cache: "no-store" };
+
+    const cases = await (await fetch("fixtures/index.json", noStore)).json();
     const testCase = cases.find((c) => c.file === fixtureFile) ?? cases[0];
 
-    // --- run the real content-script pipeline over the fixture ---------------
+    /* --- run the real content-script pipeline over the fixture ------------ */
 
     const frame = document.createElement("iframe");
 
@@ -53,31 +64,107 @@
         ? []
         : PolicyGuard.detect.findPolicyLinks(doc, testCase.url);
 
-    const patternData = await (await fetch("../analysis/patterns.json", { cache: "no-store" })).json();
+    const patternData = await (await fetch("../analysis/patterns.json", noStore)).json();
     const { rules } = compileRules(patternData);
 
     const ruleResult = detection.isPolicy
         ? runRules(extraction.fullText, rules)
         : { findings: [], stats: null };
 
-    // --- shape it the way background.js does --------------------------------
+    /* --- optionally push synthetic model findings through the real gate --- */
+
+    let findings = ruleResult.findings;
+    let deepStats = null;
+    let riskLevel = riskLevelFromFindings(findings);
+    let ranLlm = false;
+
+    if (deepMode === "done" && detection.isPolicy) {
+        const realSentence = extraction.fullText
+            .split(/\n\n/)
+            .map((block) => block.trim())
+            .filter((block) => block.length > 160 && block.length < 340)[0] ?? "";
+
+        const synthetic = [
+            {
+                id: "llm-data_sharing-0-0",
+                category: "data_sharing",
+                severity: "high",
+                title: "Your information reaches other companies",
+                description: "This service passes what it knows about you to organisations outside it.",
+                quote: realSentence,
+                location: null,
+                source: "llm",
+                confidence: 0.82
+            },
+            {
+                id: "llm-data_selling-0-1",
+                category: "data_selling",
+                severity: "high",
+                title: "Your data is auctioned weekly",
+                description: "An invented finding, present to prove the grounding check discards it.",
+                quote: "We auction your personal information to the highest bidder every Tuesday.",
+                location: null,
+                source: "llm",
+                confidence: 0.91
+            }
+        ];
+
+        const verified = verifyFindings(synthetic, extraction.fullText);
+        const merged = mergeFindings(ruleResult.findings, verified.findings);
+
+        findings = merged.findings;
+        riskLevel = "high";
+        ranLlm = true;
+
+        deepStats = {
+            ...merged.stats,
+            quotesChecked: verified.stats.checked,
+            quotesExact: verified.stats.exact,
+            quotesFuzzy: verified.stats.fuzzy,
+            quotesDropped: verified.stats.dropped,
+            dropped: verified.dropped,
+            usage: { requests: 1, inputTokens: 14200, outputTokens: 900, cacheReadTokens: 1100 },
+            chunks: 1,
+            model: "claude-opus-5"
+        };
+    }
+
+    const deepStates = {
+        off: { status: "idle", available: false, blockedReason: "Deep analysis is switched off in settings." },
+        idle: { status: "idle", available: true, blockedReason: null },
+        running: { status: "running", available: true, progress: { chunk: 1, chunks: 1 } },
+        error: { status: "error", available: true, error: "The API key was rejected. Check it in Policy Guard's settings." },
+        done: { status: "done", available: true, stats: deepStats }
+    };
+
+    /* --- shape it the way background.js does ------------------------------ */
 
     const report = {
         supported: true,
         title: doc.title,
         preview: extraction.fullText.slice(0, 400),
         policyLinks,
-        counts: summarize(ruleResult.findings),
+        counts: summarize(findings),
         ruleStats: ruleResult.stats,
+        ruleFindings: ruleResult.findings,
+        deep: {
+            needsPermission: false,
+            model: "claude-opus-5",
+            estimate: detection.isPolicy ? estimateCost(extraction.fullText, "claude-opus-5") : null,
+            progress: null,
+            error: null,
+            stats: null,
+            ...(deepStates[deepMode] ?? deepStates.idle)
+        },
         analysis: {
             url: testCase.url,
             hostname: new URL(testCase.url).hostname,
             analyzedAt: new Date().toISOString(),
             contentHash: null,
-            riskLevel: riskLevelFromFindings(ruleResult.findings),
+            riskLevel,
             summary: "",
-            findings: ruleResult.findings,
-            tiers: { rules: ruleResult.stats !== null, llm: false },
+            findings,
+            tiers: { rules: ruleResult.stats !== null, llm: ranLlm },
             truncated: false,
             detection,
             extraction: {
@@ -104,14 +191,26 @@
         tabs: {
             query: async () => [{ id: 1, url: testCase.url }]
         },
+        permissions: {
+            contains: async () => true,
+            request: async () => true
+        },
         runtime: {
-            sendMessage: async () => report
+            sendMessage: async (message) => {
+                if (message.type === "DEEP_ANALYZE") {
+                    console.log("[stub] DEEP_ANALYZE requested");
+                    return { started: true };
+                }
+
+                return report;
+            },
+            openOptionsPage: async () => console.log("[stub] openOptionsPage")
         }
     };
 
-    // --- mount the real popup -----------------------------------------------
+    /* --- mount the real popup --------------------------------------------- */
 
-    const markup = await (await fetch("../popup/popup.html")).text();
+    const markup = await (await fetch("../popup/popup.html", noStore)).text();
     const parsed = new DOMParser().parseFromString(markup, "text/html");
 
     const styles = document.createElement("link");

@@ -3,8 +3,14 @@
  * no DOM walking, no network, no analysis.
  */
 
+import { API_ORIGIN } from "../analysis/llm.js";
+
 const view = document.querySelector("#view");
 const rescanButton = document.querySelector("#rescan");
+
+/** Tab whose report is on screen, so polling knows what to re-read. */
+let currentTabId = null;
+let pollTimer = null;
 
 const DOC_TYPE_LABELS = {
     privacy_policy: "Privacy policy",
@@ -77,15 +83,28 @@ function renderFinding(finding) {
     item.append(head);
     item.append(el("p", "f-desc", finding.description));
 
+    if (finding.source !== "rules") {
+        head.append(el("span", "src", finding.source === "both" ? "AI + rules" : "AI"));
+    }
+
     if (finding.quote) {
         const details = el("details", "f-quote");
 
         details.append(el("summary", null, "Show the wording"));
         details.append(el("blockquote", null, finding.quote));
+
+        if (finding.quoteApproximate) {
+            details.append(el(
+                "p",
+                "f-meta",
+                "The wording was matched approximately, so this quote may differ slightly from the page."
+            ));
+        }
+
         details.append(el(
             "p",
             "f-meta",
-            `rule ${finding.id} · confidence ${finding.confidence.toFixed(2)}`
+            `${finding.id} · confidence ${finding.confidence.toFixed(2)}`
         ));
 
         item.append(details);
@@ -129,15 +148,23 @@ function renderFindings(report) {
         wrap.append(list);
     }
 
-    // Tier 1 is pattern matching. Silence from it is not a clean bill of health,
-    // and saying so is the difference between a useful tool and a misleading one.
-    wrap.append(el(
-        "p",
-        "tier-note",
-        counts.concerns > 0
-            ? "Found by pattern matching. Wording it does not recognise will be missed."
-            : "Pattern matching found nothing it recognises. That is not the same as the policy being safe — read it yourself for anything that matters."
-    ));
+    // Silence from either tier is not a clean bill of health, and saying so is
+    // the difference between a useful tool and a misleading one.
+    const ranLlm = report.analysis.tiers.llm;
+
+    let note;
+
+    if (counts.concerns > 0) {
+        note = ranLlm
+            ? "Read by pattern matching and AI. Both can miss things, and neither is a lawyer."
+            : "Found by pattern matching. Wording it does not recognise will be missed.";
+    } else {
+        note = ranLlm
+            ? "Neither pass found anything notable. That is not a guarantee — read it yourself for anything that matters."
+            : "Pattern matching found nothing it recognises. That is not the same as the policy being safe — read it yourself for anything that matters.";
+    }
+
+    wrap.append(el("p", "tier-note", note));
 
     if (report.ruleStats && report.ruleStats.hiddenByPreferences > 0) {
         wrap.append(el(
@@ -148,6 +175,162 @@ function renderFindings(report) {
     }
 
     return wrap;
+}
+
+/* ----------------------------------------------------------- deep analysis */
+
+function formatUsd(value) {
+    return value < 0.01 ? "<$0.01" : "$" + value.toFixed(2);
+}
+
+function renderDeepStats(stats) {
+    const details = el("details", "deep-stats");
+
+    details.append(el("summary", null, "What the AI pass did"));
+
+    const wrap = el("div", "signals");
+
+    const rows = [
+        ["Quotes checked", String(stats.quotesChecked)],
+        ["Verified against the page", String(stats.quotesExact + stats.quotesFuzzy)],
+        ["Discarded as unfindable", String(stats.quotesDropped)],
+        ["Agreed with pattern matching", String(stats.agreements)],
+        ["Model", stats.model],
+        ["Requests", String(stats.usage.requests)]
+    ];
+
+    if (stats.usage.cacheReadTokens > 0) {
+        rows.push(["Cached input tokens", formatNumber(stats.usage.cacheReadTokens)]);
+    }
+
+    for (const [label, value] of rows) {
+        const row = el("div");
+
+        row.append(el("span", null, label), el("b", null, value));
+        wrap.append(row);
+    }
+
+    details.append(wrap);
+
+    // Showing what was thrown away is the point: it is evidence the check runs.
+    if (stats.dropped && stats.dropped.length > 0) {
+        details.append(el(
+            "p",
+            "f-meta",
+            "Discarded because their wording could not be found on the page:"
+        ));
+
+        const list = el("ul", "dropped");
+
+        for (const item of stats.dropped.slice(0, 5)) {
+            list.append(el("li", null, `${item.title} — "${item.quote.slice(0, 70)}…"`));
+        }
+
+        details.append(list);
+    }
+
+    return details;
+}
+
+function renderDeep(report) {
+    const deep = report.deep;
+
+    if (!deep) {
+        return null;
+    }
+
+    const box = el("div", "deep");
+
+    if (deep.status === "running") {
+        const progress = deep.progress;
+        const label = progress && progress.chunks > 1
+            ? `Reading part ${progress.chunk} of ${progress.chunks}…`
+            : "Reading the policy…";
+
+        box.append(el("p", "deep-status", label));
+        box.append(el("p", "f-meta", "This can take up to a minute. You can close this popup."));
+
+        return box;
+    }
+
+    if (deep.status === "error") {
+        box.append(el("p", "deep-error", deep.error));
+        box.append(makeDeepButton(report, "Try again"));
+
+        return box;
+    }
+
+    if (deep.status === "done") {
+        if (deep.stats) {
+            box.append(renderDeepStats(deep.stats));
+        }
+
+        box.append(makeDeepButton(report, "Run AI analysis again"));
+
+        return box;
+    }
+
+    if (!deep.available) {
+        if (deep.blockedReason) {
+            const line = el("p", "deep-offer", deep.blockedReason);
+            const link = el("button", "linkish", "Open settings");
+
+            link.addEventListener("click", () => browser.runtime.openOptionsPage());
+            line.append(" ");
+            line.append(link);
+            box.append(line);
+        }
+
+        return box.childNodes.length > 0 ? box : null;
+    }
+
+    const estimate = deep.estimate;
+
+    box.append(makeDeepButton(report, "Run AI analysis"));
+
+    if (estimate) {
+        box.append(el(
+            "p",
+            "f-meta",
+            `Sends this page's text to Anthropic. About ${formatNumber(estimate.inputTokens)} ` +
+            `input tokens, roughly ${formatUsd(estimate.usd)}.`
+        ));
+    }
+
+    return box;
+}
+
+function makeDeepButton(report, label) {
+    const button = el("button", "primary", label);
+
+    button.addEventListener("click", async () => {
+        button.disabled = true;
+        button.textContent = "Starting…";
+
+        // permissions.request() only works inside a user gesture, so it has to
+        // happen here rather than in the background script.
+        if (report.deep.needsPermission) {
+            try {
+                const granted = await browser.permissions.request({ origins: [API_ORIGIN] });
+
+                if (!granted) {
+                    button.disabled = false;
+                    button.textContent = label;
+                    return;
+                }
+            } catch (error) {
+                button.disabled = false;
+                button.textContent = label;
+                return;
+            }
+        }
+
+        await browser.runtime.sendMessage({ type: "DEEP_ANALYZE", tabId: currentTabId });
+        startPolling();
+        load(false);
+    });
+
+    return button;
 }
 
 /* ------------------------------------------------------------ page details */
@@ -323,6 +506,13 @@ function renderReport(report) {
         view.append(verdict);
 
         view.append(renderFindings(report));
+
+        const deep = renderDeep(report);
+
+        if (deep) {
+            view.append(deep);
+        }
+
         view.append(renderPageDetails(report));
     } else {
         view.append(el("p", "verdict", "No policy on this page"));
@@ -347,28 +537,58 @@ function renderReport(report) {
     rescanButton.hidden = false;
 }
 
-async function load(force) {
-    view.replaceChildren(el("p", "muted", "Scanning this page…"));
-
-    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-
-    if (!tab) {
-        view.replaceChildren(el("p", "muted", "No active tab."));
+/**
+ * The deep pass runs in the background and outlives this popup, so the popup
+ * polls rather than holding the job. Polling stops as soon as it is not needed.
+ */
+function startPolling() {
+    if (pollTimer) {
         return;
+    }
+
+    pollTimer = setInterval(() => load(false, true), 1500);
+}
+
+function stopPolling() {
+    clearInterval(pollTimer);
+    pollTimer = null;
+}
+
+async function load(force, quiet) {
+    if (!quiet) {
+        view.replaceChildren(el("p", "muted", "Scanning this page…"));
+    }
+
+    if (currentTabId === null) {
+        const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+
+        if (!tab) {
+            view.replaceChildren(el("p", "muted", "No active tab."));
+            return;
+        }
+
+        currentTabId = tab.id;
     }
 
     try {
         const report = await browser.runtime.sendMessage({
             type: force ? "RESCAN" : "GET_REPORT",
-            tabId: tab.id
+            tabId: currentTabId
         });
 
         renderReport(report);
+
+        if (report.deep && report.deep.status === "running") {
+            startPolling();
+        } else {
+            stopPolling();
+        }
     } catch (error) {
+        stopPolling();
         view.replaceChildren(el("p", "muted", `Could not scan this page: ${error.message}`));
     }
 }
 
-rescanButton.addEventListener("click", () => load(true));
+rescanButton.addEventListener("click", () => load(true, false));
 
-load(false);
+load(false, false);

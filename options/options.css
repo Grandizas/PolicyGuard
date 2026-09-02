@@ -1,0 +1,225 @@
+:root {
+    color-scheme: light dark;
+
+    --bg: #ffffff;
+    --fg: #17181c;
+    --muted: #6a6d78;
+    --line: #e3e4e8;
+    --panel: #f5f6f8;
+    --accent: #3b6df5;
+    --warn-bg: #fff6e8;
+    --warn-line: #d98324;
+    --bad: #c0392f;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #111214;
+        --fg: #f2f3f5;
+        --muted: #9a9da7;
+        --line: #2a2c31;
+        --panel: #1a1c1f;
+        --accent: #7d9bff;
+        --warn-bg: #241c10;
+        --warn-line: #f0a145;
+        --bad: #ff6b78;
+    }
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 28px 20px 60px;
+
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.55;
+
+    background: var(--bg);
+    color: var(--fg);
+}
+
+main {
+    max-width: 640px;
+    margin: 0 auto;
+}
+
+h1 {
+    margin: 0 0 24px;
+    font-size: 20px;
+}
+
+h2 {
+    margin: 0 0 10px;
+    font-size: 15px;
+}
+
+h3 {
+    margin: 0 0 6px;
+    font-size: 13px;
+}
+
+section {
+    padding: 20px 0;
+    border-top: 1px solid var(--line);
+}
+
+.lede {
+    margin: 0 0 14px;
+    color: var(--muted);
+}
+
+.row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 10px 0;
+    cursor: pointer;
+}
+
+.row input {
+    margin-top: 3px;
+    flex: 0 0 auto;
+}
+
+.row small {
+    display: block;
+    color: var(--muted);
+}
+
+.field {
+    display: block;
+    margin: 16px 0;
+}
+
+.field .label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+
+.field small {
+    display: block;
+    margin-top: 5px;
+    color: var(--muted);
+}
+
+input[type="password"],
+input[type="text"],
+select {
+    width: 100%;
+    padding: 8px 10px;
+
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--fg);
+
+    font-family: inherit;
+    font-size: 13px;
+}
+
+input:focus,
+select:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.panel {
+    margin: 14px 0;
+    padding: 12px 14px;
+
+    background: var(--panel);
+    border-radius: 8px;
+}
+
+.panel.warn {
+    background: var(--warn-bg);
+    border-left: 3px solid var(--warn-line);
+}
+
+.panel p {
+    margin: 0 0 8px;
+}
+
+.panel p:last-of-type {
+    margin-bottom: 10px;
+}
+
+button {
+    padding: 7px 13px;
+
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+button.ghost {
+    background: transparent;
+    color: var(--muted);
+    font-weight: 500;
+}
+
+button.ghost:hover {
+    color: var(--fg);
+}
+
+button.ghost.danger:hover {
+    color: var(--bad);
+    border-color: var(--bad);
+}
+
+.row-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: -6px;
+}
+
+.concerns {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 4px 14px;
+}
+
+.concerns label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.saved {
+    margin: 16px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+footer {
+    margin-top: 28px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+
+    color: var(--muted);
+    font-size: 12px;
+}
+
+code {
+    padding: 1px 4px;
+    background: var(--panel);
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.optional {
+    font-weight: 400;
+    color: var(--muted);
+}

@@ -30,6 +30,9 @@
 <h2>3. Rules over the fixture corpus</h2>
 <pre id="rules">Running…</pre>
 
+<h2>4. Quote grounding, merge, chunking</h2>
+<pre id="analysis">Running...</pre>
+
 <h2>Summary</h2>
 <pre id="summary">Running…</pre>
 
@@ -39,6 +42,7 @@
 <script src="../content/extract.js"></script>
 <script type="module">
     import { compileRules, runRules } from "../analysis/rules.js";
+    import { runAnalysisSuite } from "./analysis-suite.js";
 
     const stage = document.querySelector("#stage");
     const totals = { pass: 0, fail: 0 };
@@ -272,6 +276,19 @@
     }
 
     document.querySelector("#rules").textContent = rulesLines.join("\n");
+
+    /* ------------------------------------- 4. grounding, merge, chunking */
+
+    const analysisLines = [];
+
+    runAnalysisSuite(
+        analysed.find((a) => a.testCase.file === "mozilla-terms.html").extraction.fullText,
+        (name, ok, detail) => {
+            analysisLines.push(pad(name, 58) + " " + record(ok ? [] : [detail]));
+        }
+    );
+
+    document.querySelector("#analysis").textContent = analysisLines.join("\n");
 
     /* ------------------------------------------------------------- summary */
 

@@ -2,7 +2,7 @@
 
 A Firefox extension that reads Terms of Service / Privacy Policies and tells you what to be cautious about, **before** you click "I agree".
 
-Status: **Phases 1 and 2 complete.** Detection, extraction and the rules engine pass 33/33 across the fixture corpus, the negation suite and the popup; `web-ext lint` is clean. The extension now produces findings with citations and no network access. Not yet loaded in a real Firefox profile.
+Status: **Phases 1-3 complete.** Detection, extraction, the rules engine and the AI pass total 50/50 across the fixture corpus, the negation suite and the grounding/merge/chunking suite; `web-ext lint` is clean. Tier 1 runs offline on every policy; tier 2 is opt-in, BYO-key, and every AI finding must cite text that actually appears on the page. Phases 1-2 confirmed working in Firefox; the tier-2 path has not been exercised against the live API.
 
 ---
 
@@ -69,15 +69,17 @@ options/
   options.html/.css/.js  # API key, concern preferences, privacy toggles
 test/
   runner.html            # assertion suite over the fixture corpus
+  analysis-suite.js      # grounding / merge / chunking assertions
+  negation-cases.json    # sentences that must and must not fire
   popup-preview.html     # the real popup, real extraction, stubbed APIs
+  options-preview.html   # the real options page, stubbed storage
   fixtures/
     index.json           # fixture -> original URL + expectations
     *.html               # saved real-world policy HTML
 ```
 
-Everything exists today except `analysis/llm.js`, `analysis/prompt.js`,
-`analysis/merge.js`, `analysis/verify.js` (Phase 3), and `content/highlight.js`,
-`content/badge.css`, `options/` (Phase 5).
+Everything exists today except `content/highlight.js` and `content/badge.css`,
+which arrive with Phases 4 and 5.
 
 No build step to start. Use ES modules (`"type": "module"` in the background, `<script type="module">` in the popup) and plain JS. Add a bundler only when a dependency demands it — for a two-panel extension it's mostly ceremony.
 
@@ -201,7 +203,10 @@ The first attempt at that macro was `\.(?!\s+[A-Z])` — "a full stop not follow
 
 - **Delivered**: mockup 1's UI, zero network calls, 33/33 green.
 
-### Phase 3 — LLM enrichment
+### Phase 3 — LLM enrichment — **done**
+
+Opt-in, BYO-key, one request per policy. `analysis/llm.js` calls the Messages API, `analysis/verify.js` throws away anything it cannot find on the page, and `analysis/merge.js` reconciles what is left with tier 1.
+
 
 - **Provider**: default to the Claude API (`claude-sonnet-5` for quality, `claude-haiku-4-5-20251001` for cheap/fast); keep the provider behind an interface in `llm.js` so an OpenAI-compatible endpoint or a local Ollama can drop in.
 - **Key handling**: BYO key stored in `browser.storage.local`, entered in the options page. **Be honest in the UI that this key is readable by anything with access to the browser profile**, and recommend a scoped/limited key. A hosted proxy is the correct long-term answer (Phase 6) — don't pretend the BYO model is secure.
@@ -211,6 +216,28 @@ The first attempt at that macro was `\.(?!\s+[A-Z])` — "a full stop not follow
 - **`verify.js`**: for every LLM finding, confirm `quote` appears in the extracted text (normalized whitespace, fuzzy to ~90% for minor rewording). Drop findings that fail; count the drops. A hard, mechanical anti-hallucination gate that costs nothing.
 - **`merge.js`**: a rules hit and an LLM finding in the same category with overlapping offsets collapse into one item with `source: "both"` and boosted confidence. Prefer the LLM's wording, keep the rules engine's severity floor.
 - **Deliverable**: the JSON from mockup 3, rendered.
+
+#### Four things that changed from the plan
+
+**Chunking was solved for the wrong problem.** The plan specified 6-8k-token chunks with 200-token overlap and a reduce pass, written on the assumption that policies would not fit in context. With a 1M-token window they comfortably do: a 12,000-word policy is about 16k tokens. Chunking now triggers only above 200,000 characters, which no fixture in the corpus reaches. The normal path is one request, no overlap cost, no reduce pass, and two fewer ways to fail. The chunking code stays for the genuinely enormous document and is tested, but it is the exception now, not the design.
+
+**The default model is `claude-opus-5`, not Sonnet.** The plan picked Sonnet for quality and Haiku for cost. Model choice is the user's call, not a default to quietly economise on, so the capable model is the default and both cheaper ones are one click away in settings with their real per-policy cost shown.
+
+**Cost is bigger than the plan implied and is stated plainly.** A single deep analysis of a mid-sized policy costs roughly $0.09 on Opus 5, $0.04 on Sonnet 5, $0.02 on Haiku 4.5 — output tokens dominate. An early draft of the settings copy said "well under a cent", which the estimator itself contradicted at $0.07 for a small policy. Both the settings page and the button now quote a figure derived from the same function.
+
+**Structured output, not tool-use.** The plan said to force JSON via tool-use. The current API does this directly with `output_config.format` and a JSON schema, which is simpler and needs no tool round-trip. Constraints the schema cannot express — numeric ranges, array length caps — are enforced when the response is normalised rather than trusted.
+
+#### The grounding gate
+
+Every model finding must quote the document. Verification normalises both sides for case, smart quotes, dashes and whitespace while keeping a character-level index back to the original, so a match yields exact offsets and the quote shown to the reader is the page's own characters rather than the model's copy of them. A quote that is not found verbatim is retried as word-trigram containment; below 90% the finding is discarded, and above it the finding survives flagged as approximate with its confidence reduced.
+
+This is the cheapest useful safety property in the whole project: no extra request, no model judging itself, no prompt engineering. The popup shows the discard count and lists what was thrown away, because a check nobody can see is a check nobody should believe. The suite asserts it directly — a fabricated clause and a plausible paraphrase are both rejected against a real policy.
+
+#### Still open at the end of Phase 3
+
+- **First live request found one thing.** Keys created inside an Anthropic workspace are identity-linked and are rejected until the request says which workspace it acts in, via an `anthropic-workspace-id` header. There is now an optional Workspace ID setting, and that specific API error is rewritten to name the setting rather than the header. The rest of the path — auth, CORS from the extension, the request body — reached the API correctly on the first attempt, and the error surfaced in the popup as intended.
+- **The key is stored unencrypted** in extension storage, and the settings page says so rather than implying otherwise. The hosted proxy in Phase 6 is the actual fix.
+- **A settings race, found and fixed here**: `updateSettings` was a read-modify-write of one object, so two quick changes clobbered each other — ticking the consent box and changing the model lost the consent. Writes are now serialised through a queue. Worth remembering for any other shared stored object.
 
 ### Phase 4 — Caching, cost control, pre-agreement warning
 
@@ -278,7 +305,7 @@ Two caveats to keep in mind when reading results: fixtures are static HTML, so a
 2. ~~Phase 1 extraction/detection.~~ **Done** — and the warning was justified: two extraction bugs would each have looked like a bad model rather than bad text.
 3. ~~Fixture corpus + tests.~~ **Done**, pulled forward from step 4 — Phase 1 could not be called finished without something to verify it against, and the corpus immediately found two real bugs.
 4. ~~Phase 2 rules engine + the popup list UI.~~ **Done** — and worth showing someone.
-5. Phase 3 LLM behind a feature flag.
+5. ~~Phase 3 LLM behind a feature flag.~~ **Done** — opt-in, off by default, and gated behind an explicit consent tick.
 6. Cache, then cost controls, then the signup-page badge.
 7. Preferences, polish, AMO submission.
 

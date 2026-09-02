@@ -367,3 +367,97 @@ details.f-quote blockquote {
 details.page-details {
     margin-top: 12px;
 }
+
+/* -------------------------------------------------------- deep analysis */
+
+.deep {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+}
+
+button.primary {
+    width: 100%;
+    padding: 8px 12px;
+
+    border: none;
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+button.primary:hover:not(:disabled) {
+    filter: brightness(1.08);
+}
+
+button.primary:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+button.linkish {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent);
+
+    font-family: inherit;
+    font-size: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.deep-status {
+    margin: 0 0 4px;
+    font-weight: 600;
+}
+
+.deep-error {
+    margin: 0 0 8px;
+    padding: 8px 10px;
+
+    background: var(--panel);
+    border-left: 3px solid var(--bad);
+    border-radius: 0 5px 5px 0;
+
+    color: var(--fg);
+    font-size: 12px;
+}
+
+.deep-offer {
+    margin: 0;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.deep .f-meta {
+    margin-left: 0;
+}
+
+details.deep-stats {
+    margin: 0 0 10px;
+    border-top: none;
+    padding-top: 0;
+}
+
+ul.dropped {
+    margin: 4px 0 0;
+    padding-left: 16px;
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.src {
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--panel);
+    color: var(--muted);
+
+    font-size: 10px;
+    font-weight: 600;
+}
