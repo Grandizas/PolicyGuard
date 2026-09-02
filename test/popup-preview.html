@@ -17,6 +17,9 @@
 <script src="../content/detect.js"></script>
 <script src="../content/extract.js"></script>
 <script type="module">
+    import { compileRules, runRules, summarize } from "../analysis/rules.js";
+    import { riskLevelFromFindings } from "../lib/schema.js";
+
     const params = new URLSearchParams(location.search);
     const fixtureFile = params.get("fixture") ?? "apple-privacy.html";
 
@@ -50,6 +53,13 @@
         ? []
         : PolicyGuard.detect.findPolicyLinks(doc, testCase.url);
 
+    const patternData = await (await fetch("../analysis/patterns.json", { cache: "no-store" })).json();
+    const { rules } = compileRules(patternData);
+
+    const ruleResult = detection.isPolicy
+        ? runRules(extraction.fullText, rules)
+        : { findings: [], stats: null };
+
     // --- shape it the way background.js does --------------------------------
 
     const report = {
@@ -57,15 +67,17 @@
         title: doc.title,
         preview: extraction.fullText.slice(0, 400),
         policyLinks,
+        counts: summarize(ruleResult.findings),
+        ruleStats: ruleResult.stats,
         analysis: {
             url: testCase.url,
             hostname: new URL(testCase.url).hostname,
             analyzedAt: new Date().toISOString(),
             contentHash: null,
-            riskLevel: "low",
+            riskLevel: riskLevelFromFindings(ruleResult.findings),
             summary: "",
-            findings: [],
-            tiers: { rules: false, llm: false },
+            findings: ruleResult.findings,
+            tiers: { rules: ruleResult.stats !== null, llm: false },
             truncated: false,
             detection,
             extraction: {

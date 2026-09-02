@@ -2,7 +2,7 @@
 
 A Firefox extension that reads Terms of Service / Privacy Policies and tells you what to be cautious about, **before** you click "I agree".
 
-Status: **Phase 1 complete.** Detection and extraction work against a 9-fixture corpus (9/9), the popup reports what it found, and `web-ext lint` is clean. Findings are not produced yet — that is Phase 2. Not yet loaded in a real Firefox profile; see the note at the end of Phase 1.
+Status: **Phases 1 and 2 complete.** Detection, extraction and the rules engine pass 33/33 across the fixture corpus, the negation suite and the popup; `web-ext lint` is clean. The extension now produces findings with citations and no network access. Not yet loaded in a real Firefox profile.
 
 ---
 
@@ -75,8 +75,9 @@ test/
     *.html               # saved real-world policy HTML
 ```
 
-Everything above `analysis/` exists today; `analysis/`, `options/` and the
-highlighting half of `content/` arrive with Phases 2, 3 and 5.
+Everything exists today except `analysis/llm.js`, `analysis/prompt.js`,
+`analysis/merge.js`, `analysis/verify.js` (Phase 3), and `content/highlight.js`,
+`content/badge.css`, `options/` (Phase 5).
 
 No build step to start. Use ES modules (`"type": "module"` in the background, `<script type="module">` in the popup) and plain JS. Add a bundler only when a dependency demands it — for a two-panel extension it's mostly ceremony.
 
@@ -152,9 +153,15 @@ Both failures share a shape worth remembering: **silent under-extraction looks e
 - **Cross-origin iframes are counted, not read.** Same-origin frames are extracted and adopted; cross-origin ones are reported to the user as unreadable. Reading them needs `all_frames: true` plus frame-to-frame messaging.
 - **The 400-character collapsed-content threshold is a judgement call**, tuned against one accordion layout. It will need revisiting as the corpus grows — a page with hidden translations of its own content would over-extract.
 
-### Phase 2 — Rules engine (first real output)
+### Phase 2 — Rules engine (first real output) — **done**
 
-- Move patterns out of code into `analysis/patterns.json`:
+27 rules across 14 categories in `analysis/patterns.json`, matched by
+`analysis/rules.js`. Runs on every detected policy, no network, no key, no
+consent needed. The popup renders the mockup: risk pill, concern count,
+severity-labelled findings, plain-language descriptions, and the citation
+behind each one.
+
+- Patterns live in `analysis/patterns.json`:
 
 ```json
 {
@@ -171,9 +178,28 @@ Both failures share a shape worth remembering: **silent under-extraction looks e
 ```
 
   The `not` list is the part naive keyword matching always gets wrong: "we will never share your data with third parties" trips the third-party rule and reports a privacy *guarantee* as a risk. Negation handling within a ±80-character window is the single biggest quality lever in this phase.
-- Every match captures the surrounding sentence as `quote` plus char offsets.
-- Cap findings per category (2–3) so one repetitive policy doesn't produce 40 items.
-- **Deliverable**: the first mockup's UI — severity dots, category titles, plain-language descriptions — working with zero network calls.
+- Every match captures the surrounding sentence as `quote` plus char offsets. Quotes are verbatim substrings, and the suite asserts that on every finding — the same gate that will police LLM output in Phase 3.
+- Findings are capped at 2 per category, applied after sorting so the cap keeps the strongest items.
+
+#### What the corpus changed, again
+
+**Negation needs morphology, not keywords.** The plan called negation "the single biggest quality lever" and it was right, but underestimated it. Wikimedia's policy says *"Never selling your information or sharing it with third parties for marketing purposes"* — a promise. My `not` list had `never sell`, which does not match `never sell**ing**`. The result was three **high-severity** findings on the most privacy-friendly policy in the corpus. Reporting a guarantee as a risk is worse than missing a risk: it destroys the reason to trust anything else on the list.
+
+Fixing it properly meant a shared `defaultNot` list applied to every non-`good` rule, with unterminated verb stems (`shar` covers share/shares/sharing) and a gap after `not` so *"do not rent or sell"* is caught. Three sentence classes mention a practice without being it, and each was found by running the corpus rather than by reasoning up front:
+
+| Class | Example found in the corpus |
+| --- | --- |
+| Guarantee | "Never selling your information or sharing it with third parties" |
+| Scope disclaimer | "this policy does not address the practices of third parties" |
+| User control | "you can disable Personalized Ads by going to Settings" |
+
+**A `[^.]` gap cannot cross an abbreviation.** Patterns pair a verb with an object a few words later, and the obvious way to keep that inside one sentence is `[^.]{0,60}`. It silently fails on *"we share your data with vendors (e.g. payment processors) and other third parties"* — two full stops mid-sentence. Patterns now use a `%GAP%` macro that expands to a sentence-aware character class.
+
+The first attempt at that macro was `\.(?!\s+[A-Z])` — "a full stop not followed by a capital" — which is **inert**, because rules compile with the `i` flag and `[A-Z]` then matches lowercase too. The working version identifies sentence ends without reference to case.
+
+**One "false positive" turned out to be the test being wrong.** After the guarantee sentence was suppressed, `data-sharing-third-parties` re-fired on Wikimedia at *"We disclose Personal Information to our third-party service providers"* — which is true, and which the earlier bug had been masking. The expectation was corrected rather than the rule.
+
+- **Delivered**: mockup 1's UI, zero network calls, 33/33 green.
 
 ### Phase 3 — LLM enrichment
 
@@ -227,7 +253,8 @@ Two caveats to keep in mind when reading results: fixtures are static HTML, so a
 - **Hard negatives matter more than positives.** The corpus earns its keep through `neg-wikipedia-privacy` (an article about privacy policies) and `neg-mozilla-home` (marketing copy that says "you" and "we" constantly). Both were misclassified by an approach that looked reasonable on paper.
 - **Extraction tests**: assert word count within a range and that known section headings survive.
 - **Rules tests**: hand-label the expected findings for ~10 fixtures. Track precision/recall as `patterns.json` grows; a new pattern that raises recall 2% and drops precision 15% is a bad trade and you want to *see* that.
-- **Negation regression suite**: a flat file of tricky sentences ("we do not sell your personal information") that must produce zero or `good` findings.
+- **Negation regression suite**: `test/negation-cases.json` — 19 hand-written sentences asserting both what must fire and what must not. This is where every negation bug gets locked down; grow it whenever the corpus surfaces a new false positive. Each case also asserts quote grounding.
+- **Rule expectations** live beside each fixture in `test/fixtures/index.json` as `mustInclude` / `mustNotInclude`. Not full precision/recall — labelling an 8,000-word policy exhaustively is not honest work — but enough to catch drift, and every locked expectation records a real bug.
 - **LLM tests**: mock the provider by default. Keep a separate, manually-run `test/live/` script for real calls so CI stays free.
 
 ---
@@ -250,7 +277,7 @@ Two caveats to keep in mind when reading results: fixtures are static HTML, so a
 1. ~~`lib/schema.js` + `lib/storage.js` — the shared vocabulary, first.~~ **Done.**
 2. ~~Phase 1 extraction/detection.~~ **Done** — and the warning was justified: two extraction bugs would each have looked like a bad model rather than bad text.
 3. ~~Fixture corpus + tests.~~ **Done**, pulled forward from step 4 — Phase 1 could not be called finished without something to verify it against, and the corpus immediately found two real bugs.
-4. Phase 2 rules engine + the popup list UI. The first thing worth showing anyone.
+4. ~~Phase 2 rules engine + the popup list UI.~~ **Done** — and worth showing someone.
 5. Phase 3 LLM behind a feature flag.
 6. Cache, then cost controls, then the signup-page badge.
 7. Preferences, polish, AMO submission.

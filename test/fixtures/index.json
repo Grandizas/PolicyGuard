@@ -5,7 +5,12 @@
     "expect": {
       "isPolicy": true,
       "docType": "terms",
-      "minWords": 500
+      "minWords": 500,
+      "rules": {
+        "mustInclude": [
+          "content-license-broad"
+        ]
+      }
     }
   },
   {
@@ -14,7 +19,18 @@
     "expect": {
       "isPolicy": true,
       "docType": "privacy_policy",
-      "minWords": 2000
+      "minWords": 2000,
+      "rules": {
+        "mustNotInclude": [
+          "data-selling",
+          "data-sharing-advertising"
+        ],
+        "mustInclude": [
+          "data-selling-none",
+          "data-sharing-none",
+          "data-sharing-third-parties"
+        ]
+      }
     }
   },
   {
@@ -32,7 +48,15 @@
     "expect": {
       "isPolicy": true,
       "docType": "privacy_policy",
-      "minWords": 1000
+      "minWords": 1000,
+      "rules": {
+        "mustNotInclude": [
+          "data-sharing-advertising"
+        ],
+        "mustInclude": [
+          "data-selling-none"
+        ]
+      }
     }
   },
   {
@@ -41,7 +65,13 @@
     "expect": {
       "isPolicy": true,
       "docType": "terms",
-      "minWords": 2000
+      "minWords": 2000,
+      "rules": {
+        "mustInclude": [
+          "arbitration-binding",
+          "class-action-waiver"
+        ]
+      }
     }
   },
   {

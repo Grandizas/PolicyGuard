@@ -7,9 +7,10 @@
  * rather than held in memory.
  */
 
-import { createAnalysis } from "./lib/schema.js";
+import { createAnalysis, riskLevelFromFindings } from "./lib/schema.js";
 import { contentHash } from "./lib/hash.js";
-import { getTabAnalysis, setTabAnalysis, clearTabAnalysis } from "./lib/storage.js";
+import { compileRules, runRules, summarize } from "./analysis/rules.js";
+import { getSettings, getTabAnalysis, setTabAnalysis, clearTabAnalysis } from "./lib/storage.js";
 
 /** Kept in sync with the content_scripts entry in the manifest. */
 const CONTENT_FILES = [
@@ -20,6 +21,34 @@ const CONTENT_FILES = [
 
 function isScannable(url) {
     return typeof url === "string" && /^https?:\/\//i.test(url);
+}
+
+/**
+ * Patterns are data, loaded and compiled once per background-script lifetime.
+ * An event page can be evicted, so this is a warm cache rather than a global.
+ */
+let rulesPromise = null;
+
+function loadRules() {
+    if (!rulesPromise) {
+        rulesPromise = (async () => {
+            const url = browser.runtime.getURL("analysis/patterns.json");
+            const data = await (await fetch(url)).json();
+            const { rules, errors } = compileRules(data);
+
+            for (const error of errors) {
+                console.warn("Policy Guard: rule", error.id, "-", error.reason);
+            }
+
+            return rules;
+        })().catch((error) => {
+            // Do not cache a failure; the next scan should get another chance.
+            rulesPromise = null;
+            throw error;
+        });
+    }
+
+    return rulesPromise;
 }
 
 async function pingTab(tabId) {
@@ -80,6 +109,23 @@ async function scanTab(tabId) {
 
     const payload = response.payload;
 
+    // Tier 1 runs on every policy: it is free, offline, and needs no consent.
+    let findings = [];
+    let ruleStats = null;
+
+    if (payload.detection.isPolicy) {
+        try {
+            const settings = await getSettings();
+            const rules = await loadRules();
+            const result = runRules(payload.fullText, rules, { concerns: settings.concerns });
+
+            findings = result.findings;
+            ruleStats = result.stats;
+        } catch (error) {
+            console.warn("Policy Guard: rules engine failed -", error);
+        }
+    }
+
     const analysis = createAnalysis({
         url: payload.url,
         hostname: payload.hostname,
@@ -87,9 +133,10 @@ async function scanTab(tabId) {
         contentHash: payload.extraction.wordCount > 0
             ? await contentHash(payload.hostname, payload.fullText)
             : null,
+        riskLevel: riskLevelFromFindings(findings),
         summary: "",
-        findings: [],
-        tiers: { rules: false, llm: false },
+        findings,
+        tiers: { rules: ruleStats !== null, llm: false },
         truncated: false,
         detection: payload.detection,
         extraction: payload.extraction
@@ -100,6 +147,8 @@ async function scanTab(tabId) {
         title: payload.title,
         preview: payload.preview,
         policyLinks: payload.policyLinks ?? [],
+        counts: summarize(findings),
+        ruleStats,
         analysis
     };
 

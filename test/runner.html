@@ -2,33 +2,62 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Policy Guard — extraction tests</title>
+    <title>Policy Guard — test runner</title>
     <style>
         body { font: 13px/1.5 system-ui, sans-serif; margin: 20px; }
         pre { background: #f4f4f6; padding: 12px; border-radius: 6px; overflow: auto; }
-        iframe { width: 900px; height: 300px; border: 1px solid #ccc; }
+        h2 { font-size: 14px; margin: 22px 0 6px; }
         #stage { position: absolute; left: -10000px; top: 0; }
+        #stage iframe { width: 900px; height: 300px; }
     </style>
 </head>
 <body>
 
-<h1>Policy Guard — extraction tests</h1>
+<h1>Policy Guard — test runner</h1>
 <p>
     Fixtures are loaded into a script-free same-origin iframe and run through the
-    real <code>content/detect.js</code> and <code>content/extract.js</code>.
-    The recorded original URL is passed to detection, since the fixture is served
-    from localhost.
+    real <code>content/detect.js</code>, <code>content/extract.js</code> and
+    <code>analysis/rules.js</code>. The recorded original URL is passed to
+    detection, since the fixture itself is served from localhost.
 </p>
 
-<pre id="results">Running…</pre>
+<h2>1. Detection &amp; extraction</h2>
+<pre id="extraction">Running…</pre>
+
+<h2>2. Negation suite</h2>
+<pre id="negation">Running…</pre>
+
+<h2>3. Rules over the fixture corpus</h2>
+<pre id="rules">Running…</pre>
+
+<h2>Summary</h2>
+<pre id="summary">Running…</pre>
 
 <div id="stage"></div>
 
 <script src="../content/detect.js"></script>
 <script src="../content/extract.js"></script>
-<script>
+<script type="module">
+    import { compileRules, runRules } from "../analysis/rules.js";
+
     const stage = document.querySelector("#stage");
-    const out = document.querySelector("#results");
+    const totals = { pass: 0, fail: 0 };
+    const noStore = { cache: "no-store" };
+
+    function pad(value, width) {
+        return String(value).padEnd(width);
+    }
+
+    function record(problems) {
+        if (problems.length === 0) {
+            totals.pass += 1;
+            return "PASS";
+        }
+
+        totals.fail += 1;
+
+        return "FAIL " + problems.join("; ");
+    }
 
     function loadFixture(file) {
         return new Promise((resolve, reject) => {
@@ -46,132 +75,214 @@
         });
     }
 
-    function pad(value, width) {
-        return String(value).padEnd(width);
+    /**
+     * Every quote must be a verbatim substring of the text it came from. The
+     * same check will gate LLM findings in Phase 3, so tier 1 has to honour it.
+     */
+    function ungroundedQuotes(findings, text) {
+        return findings
+            .filter((f) => f.quote && !text.includes(f.quote))
+            .map((f) => f.id);
     }
 
-    async function run() {
-        const cases = await (await fetch("fixtures/index.json", { cache: "no-store" })).json();
-        const lines = [];
-        const summary = { pass: 0, fail: 0 };
+    /* ---------------------------------------------------------------- setup */
 
-        lines.push([
-            pad("FIXTURE", 26),
-            pad("POLICY", 7),
-            pad("SCORE", 6),
-            pad("WORDS", 7),
-            pad("SECT", 5),
-            pad("DENS", 6),
-            pad("TYPE", 16),
-            pad("METHOD", 10),
-            "VERDICT"
-        ].join(" "));
+    const [cases, patternData, negationCases] = await Promise.all([
+        fetch("fixtures/index.json", noStore).then((r) => r.json()),
+        fetch("../analysis/patterns.json", noStore).then((r) => r.json()),
+        fetch("negation-cases.json", noStore).then((r) => r.json())
+    ]);
 
-        lines.push("-".repeat(110));
+    const { rules, errors: ruleErrors } = compileRules(patternData);
 
-        for (const testCase of cases) {
-            let frame;
+    /* --------------------------------------------------- 1. detection suite */
 
-            try {
-                frame = await loadFixture(testCase.file);
-            } catch (error) {
-                lines.push(pad(testCase.file, 26) + " LOAD ERROR " + error.message);
-                summary.fail += 1;
-                continue;
-            }
+    const extractionLines = [[
+        pad("FIXTURE", 26), pad("POLICY", 7), pad("SCORE", 6), pad("WORDS", 7),
+        pad("SECT", 5), pad("TYPE", 16), pad("METHOD", 10), "VERDICT"
+    ].join(" "), "-".repeat(100)];
 
-            const doc = frame.contentDocument;
-            const started = performance.now();
+    const analysed = [];
 
-            const extraction = PolicyGuard.extract.extractPolicy(doc);
+    for (const testCase of cases) {
+        const frame = await loadFixture(testCase.file);
+        const doc = frame.contentDocument;
 
-            const detection = PolicyGuard.detect.detectPage(
-                doc,
-                testCase.url,
-                extraction.fullText,
-                extraction.wordCount
-            );
+        const extraction = PolicyGuard.extract.extractPolicy(doc);
 
-            const elapsed = Math.round(performance.now() - started);
-            const problems = [];
+        const detection = PolicyGuard.detect.detectPage(
+            doc,
+            testCase.url,
+            extraction.fullText,
+            extraction.wordCount
+        );
 
-            if (detection.isPolicy !== testCase.expect.isPolicy) {
-                problems.push("isPolicy expected " + testCase.expect.isPolicy);
-            }
+        const problems = [];
 
-            if (testCase.expect.links) {
-                const links = PolicyGuard.detect.findPolicyLinks(doc, testCase.url);
-                const flagged = links.filter((l) => l.nearAgreement).map((l) => l.text);
-
-                if (links.length < testCase.expect.links.min) {
-                    problems.push("links " + links.length + " < " + testCase.expect.links.min);
-                }
-
-                for (const expected of testCase.expect.links.nearAgreement ?? []) {
-                    if (!flagged.includes(expected)) {
-                        problems.push("not flagged near agreement: " + expected);
-                    }
-                }
-
-                for (const unexpected of testCase.expect.links.notNearAgreement ?? []) {
-                    if (flagged.includes(unexpected)) {
-                        problems.push("wrongly flagged near agreement: " + unexpected);
-                    }
-                }
-
-                lines.push("    policy links: " + links.length +
-                    ", beside an agree control: " + JSON.stringify(flagged));
-            }
-
-            if (testCase.expect.docType && detection.docType !== testCase.expect.docType) {
-                problems.push("docType got " + detection.docType);
-            }
-
-            if (testCase.expect.minWords && extraction.wordCount < testCase.expect.minWords) {
-                problems.push("words < " + testCase.expect.minWords);
-            }
-
-            if (problems.length === 0) {
-                summary.pass += 1;
-            } else {
-                summary.fail += 1;
-            }
-
-            lines.push([
-                pad(testCase.file.replace(".html", ""), 26),
-                pad(detection.isPolicy ? "yes" : "no", 7),
-                pad(detection.score, 6),
-                pad(extraction.wordCount, 7),
-                pad(extraction.sections.length, 5),
-                pad(detection.signals.density.per1000, 6),
-                pad(detection.docType, 16),
-                pad(extraction.method, 10),
-                problems.length === 0 ? "PASS (" + elapsed + "ms)" : "FAIL " + problems.join("; ")
-            ].join(" "));
-
-            if (testCase.expect.isPolicy) {
-                const headings = extraction.sections
-                    .filter((s) => s.heading)
-                    .slice(0, 5)
-                    .map((s) => s.heading.slice(0, 40));
-
-                lines.push("    first headings: " + JSON.stringify(headings));
-                lines.push("    first 160 chars: " + JSON.stringify(extraction.fullText.slice(0, 160)));
-            }
-
-            frame.remove();
+        if (detection.isPolicy !== testCase.expect.isPolicy) {
+            problems.push("isPolicy expected " + testCase.expect.isPolicy);
         }
 
-        lines.push("-".repeat(110));
-        lines.push(summary.pass + " passed, " + summary.fail + " failed");
+        if (testCase.expect.docType && detection.docType !== testCase.expect.docType) {
+            problems.push("docType got " + detection.docType);
+        }
 
-        out.textContent = lines.join("\n");
-        document.title = "done " + summary.pass + "/" + (summary.pass + summary.fail);
+        if (testCase.expect.minWords && extraction.wordCount < testCase.expect.minWords) {
+            problems.push("words < " + testCase.expect.minWords);
+        }
+
+        if (testCase.expect.links) {
+            const links = PolicyGuard.detect.findPolicyLinks(doc, testCase.url);
+            const flagged = links.filter((l) => l.nearAgreement).map((l) => l.text);
+
+            if (links.length < testCase.expect.links.min) {
+                problems.push("links " + links.length + " < " + testCase.expect.links.min);
+            }
+
+            for (const expected of testCase.expect.links.nearAgreement ?? []) {
+                if (!flagged.includes(expected)) {
+                    problems.push("not flagged near agreement: " + expected);
+                }
+            }
+
+            for (const unexpected of testCase.expect.links.notNearAgreement ?? []) {
+                if (flagged.includes(unexpected)) {
+                    problems.push("wrongly flagged near agreement: " + unexpected);
+                }
+            }
+        }
+
+        extractionLines.push([
+            pad(testCase.file.replace(".html", ""), 26),
+            pad(detection.isPolicy ? "yes" : "no", 7),
+            pad(detection.score, 6),
+            pad(extraction.wordCount, 7),
+            pad(extraction.sections.length, 5),
+            pad(detection.docType, 16),
+            pad(extraction.method, 10),
+            record(problems)
+        ].join(" "));
+
+        analysed.push({ testCase, extraction, detection });
+        frame.remove();
     }
 
-    run().catch((error) => {
-        out.textContent = "runner error: " + (error && error.stack ? error.stack : error);
-    });
+    document.querySelector("#extraction").textContent = extractionLines.join("\n");
+
+    /* ---------------------------------------------------- 2. negation suite */
+
+    const negationLines = [];
+
+    for (const testCase of negationCases) {
+        const { findings } = runRules(testCase.text, rules, { maxPerCategory: 99 });
+        const ids = findings.map((f) => f.id);
+        const problems = [];
+
+        for (const id of testCase.fires ?? []) {
+            if (!ids.includes(id)) {
+                problems.push("expected " + id);
+            }
+        }
+
+        for (const id of testCase.notFires ?? []) {
+            if (ids.includes(id)) {
+                problems.push("false positive " + id);
+            }
+        }
+
+        for (const [id, needle] of Object.entries(testCase.quoteMustContain ?? {})) {
+            const finding = findings.find((f) => f.id === id);
+
+            if (finding && !finding.quote.includes(needle)) {
+                problems.push("quote for " + id + " missing " + JSON.stringify(needle));
+            }
+        }
+
+        const ungrounded = ungroundedQuotes(findings, testCase.text);
+
+        if (ungrounded.length > 0) {
+            problems.push("ungrounded quote: " + ungrounded.join(","));
+        }
+
+        negationLines.push(pad(testCase.name, 52) + " " + record(problems));
+
+        if (problems.length > 0) {
+            negationLines.push("    fired: " + JSON.stringify(ids));
+        }
+    }
+
+    document.querySelector("#negation").textContent = negationLines.join("\n");
+
+    /* ------------------------------------------------- 3. rules over corpus */
+
+    const rulesLines = [];
+
+    for (const { testCase, extraction, detection } of analysed) {
+        if (!detection.isPolicy) {
+            continue;
+        }
+
+        const { findings, stats } = runRules(extraction.fullText, rules);
+        const ids = findings.map((f) => f.id);
+        const problems = [];
+        const expected = testCase.expect.rules ?? {};
+
+        for (const id of expected.mustInclude ?? []) {
+            if (!ids.includes(id)) {
+                problems.push("missing " + id);
+            }
+        }
+
+        for (const id of expected.mustNotInclude ?? []) {
+            if (ids.includes(id)) {
+                problems.push("false positive " + id);
+            }
+        }
+
+        const ungrounded = ungroundedQuotes(findings, extraction.fullText);
+
+        if (ungrounded.length > 0) {
+            problems.push("ungrounded quote: " + ungrounded.join(","));
+        }
+
+        const bySeverity = findings.reduce((acc, f) => {
+            acc[f.severity] = (acc[f.severity] ?? 0) + 1;
+            return acc;
+        }, {});
+
+        rulesLines.push(
+            pad(testCase.file.replace(".html", ""), 26) +
+            pad(findings.length + " shown", 10) +
+            pad("hi " + (bySeverity.high ?? 0), 6) +
+            pad("md " + (bySeverity.medium ?? 0), 6) +
+            pad("lo " + (bySeverity.low ?? 0), 6) +
+            pad("good " + (bySeverity.good ?? 0), 8) +
+            pad("capped " + stats.suppressedByCategoryCap, 11) +
+            record(problems)
+        );
+
+        for (const finding of findings) {
+            rulesLines.push(
+                "    " + pad(finding.severity, 7) + pad(finding.id, 28) +
+                JSON.stringify(finding.quote.slice(0, 90))
+            );
+        }
+
+        rulesLines.push("");
+    }
+
+    document.querySelector("#rules").textContent = rulesLines.join("\n");
+
+    /* ------------------------------------------------------------- summary */
+
+    document.querySelector("#summary").textContent = [
+        "rules compiled: " + rules.length,
+        "rule errors:    " + (ruleErrors.length === 0 ? "none" : JSON.stringify(ruleErrors)),
+        "",
+        totals.pass + " passed, " + totals.fail + " failed"
+    ].join("\n");
+
+    document.title = "done " + totals.pass + "/" + (totals.pass + totals.fail);
 </script>
 
 </body>

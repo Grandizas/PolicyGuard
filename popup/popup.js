@@ -22,6 +22,19 @@ const EXTRACTION_LABELS = {
     innertext: "rendered text (fallback)"
 };
 
+const SEVERITY_LABELS = {
+    high: "High",
+    medium: "Medium",
+    low: "Low",
+    good: "In your favour"
+};
+
+const RISK_LABELS = {
+    high: "High risk",
+    medium: "Medium risk",
+    low: "Low risk"
+};
+
 function el(tag, className, text) {
     const node = document.createElement(tag);
 
@@ -47,6 +60,97 @@ function methodLabel(method) {
 
     return EXTRACTION_LABELS[method] ?? method;
 }
+
+/* ---------------------------------------------------------------- findings */
+
+function renderFinding(finding) {
+    const item = el("li", "finding");
+
+    const head = el("div", "f-head");
+
+    head.append(el("span", "dot sev-" + finding.severity));
+    head.append(el("span", "f-title", finding.title));
+
+    // Severity is never carried by colour alone.
+    head.append(el("span", "chip sev-" + finding.severity, SEVERITY_LABELS[finding.severity]));
+
+    item.append(head);
+    item.append(el("p", "f-desc", finding.description));
+
+    if (finding.quote) {
+        const details = el("details", "f-quote");
+
+        details.append(el("summary", null, "Show the wording"));
+        details.append(el("blockquote", null, finding.quote));
+        details.append(el(
+            "p",
+            "f-meta",
+            `rule ${finding.id} · confidence ${finding.confidence.toFixed(2)}`
+        ));
+
+        item.append(details);
+    }
+
+    return item;
+}
+
+function renderFindings(report) {
+    const findings = report.analysis.findings;
+    const counts = report.counts;
+    const wrap = document.createDocumentFragment();
+
+    if (counts.concerns > 0) {
+        const header = el("div", "risk-head");
+
+        header.append(el(
+            "span",
+            "risk-pill risk-" + report.analysis.riskLevel,
+            RISK_LABELS[report.analysis.riskLevel]
+        ));
+
+        header.append(el(
+            "span",
+            "concern-count",
+            counts.concerns === 1 ? "1 concern found" : `${counts.concerns} concerns found`
+        ));
+
+        wrap.append(header);
+    } else {
+        wrap.append(el("p", "verdict-clear", "No concerns matched"));
+    }
+
+    if (findings.length > 0) {
+        const list = el("ul", "findings");
+
+        for (const finding of findings) {
+            list.append(renderFinding(finding));
+        }
+
+        wrap.append(list);
+    }
+
+    // Tier 1 is pattern matching. Silence from it is not a clean bill of health,
+    // and saying so is the difference between a useful tool and a misleading one.
+    wrap.append(el(
+        "p",
+        "tier-note",
+        counts.concerns > 0
+            ? "Found by pattern matching. Wording it does not recognise will be missed."
+            : "Pattern matching found nothing it recognises. That is not the same as the policy being safe — read it yourself for anything that matters."
+    ));
+
+    if (report.ruleStats && report.ruleStats.hiddenByPreferences > 0) {
+        wrap.append(el(
+            "p",
+            "tier-note",
+            `${report.ruleStats.hiddenByPreferences} finding(s) hidden by your concern preferences.`
+        ));
+    }
+
+    return wrap;
+}
+
+/* ------------------------------------------------------------ page details */
 
 function renderStats(extraction) {
     const stats = el("div", "stats");
@@ -125,6 +229,53 @@ function renderPreview(preview) {
     return details;
 }
 
+function renderPageDetails(report) {
+    const { detection, extraction } = report.analysis;
+    const outer = el("details", "page-details");
+
+    outer.append(el("summary", null, "Page details"));
+
+    outer.append(renderStats(extraction));
+
+    if (extraction.degraded) {
+        outer.append(el(
+            "p",
+            "notice",
+            "Structured extraction came up short, so the text is a rough fallback. Findings from this page are less reliable."
+        ));
+    }
+
+    if (extraction.collapsedSections > 0) {
+        outer.append(el(
+            "p",
+            "notice",
+            `${extraction.collapsedSections} collapsed section(s) were opened up to read the full document.`
+        ));
+    }
+
+    if (extraction.unreadableFrames > 0) {
+        outer.append(el(
+            "p",
+            "notice",
+            `${extraction.unreadableFrames} embedded frame(s) could not be read from this page.`
+        ));
+    }
+
+    if (extraction.sectionCount > 0) {
+        outer.append(renderSections(extraction));
+    }
+
+    if (report.preview) {
+        outer.append(renderPreview(report.preview));
+    }
+
+    outer.append(renderSignals(detection, extraction));
+
+    return outer;
+}
+
+/* ------------------------------------------------------------ policy links */
+
 function renderPolicyLinks(links) {
     const details = el("details");
 
@@ -152,6 +303,8 @@ function renderPolicyLinks(links) {
     return details;
 }
 
+/* ------------------------------------------------------------------ render */
+
 function renderReport(report) {
     view.replaceChildren();
 
@@ -160,54 +313,20 @@ function renderReport(report) {
         return;
     }
 
-    const { detection, extraction } = report.analysis;
-
-    const verdict = el("p", "verdict");
+    const { detection } = report.analysis;
 
     if (detection.isPolicy) {
+        const verdict = el("p", "verdict");
+
         verdict.append(el("strong", null, "Policy detected"));
         verdict.append(el("span", "doc-type", DOC_TYPE_LABELS[detection.docType]));
+        view.append(verdict);
+
+        view.append(renderFindings(report));
+        view.append(renderPageDetails(report));
     } else {
-        verdict.append(el("strong", null, "No policy on this page"));
-    }
+        view.append(el("p", "verdict", "No policy on this page"));
 
-    view.append(verdict);
-
-    if (detection.isPolicy) {
-        view.append(renderStats(extraction));
-
-        if (extraction.degraded) {
-            view.append(el(
-                "p",
-                "notice",
-                "Structured extraction came up short, so the text below is a rough fallback. Findings from this page will be less reliable."
-            ));
-        }
-
-        if (extraction.collapsedSections > 0) {
-            view.append(el(
-                "p",
-                "notice",
-                `${extraction.collapsedSections} collapsed section(s) were opened up to read the full document.`
-            ));
-        }
-
-        if (extraction.unreadableFrames > 0) {
-            view.append(el(
-                "p",
-                "notice",
-                `${extraction.unreadableFrames} embedded frame(s) could not be read from this page.`
-            ));
-        }
-
-        if (extraction.sectionCount > 0) {
-            view.append(renderSections(extraction));
-        }
-
-        if (report.preview) {
-            view.append(renderPreview(report.preview));
-        }
-    } else {
         let why = "Nothing on this page reads like a terms or privacy document.";
 
         if (detection.impersonal && detection.score >= detection.threshold) {
@@ -221,9 +340,9 @@ function renderReport(report) {
         if (report.policyLinks.length > 0) {
             view.append(renderPolicyLinks(report.policyLinks));
         }
-    }
 
-    view.append(renderSignals(detection, extraction));
+        view.append(renderPageDetails(report));
+    }
 
     rescanButton.hidden = false;
 }

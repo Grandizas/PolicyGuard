@@ -1,0 +1,103 @@
+[
+  {
+    "name": "guarantee not to share reads as a guarantee",
+    "text": "We will never share your personal information with third parties.",
+    "notFires": ["data-sharing-third-parties"]
+  },
+  {
+    "name": "guarantee not to sell reads as a favourable term",
+    "text": "We do not sell your personal information to anyone, ever.",
+    "fires": ["data-selling-none"],
+    "notFires": ["data-selling"]
+  },
+  {
+    "name": "actual sharing still fires",
+    "text": "We may share your information with third parties for advertising purposes.",
+    "fires": ["data-sharing-third-parties", "data-sharing-advertising"]
+  },
+  {
+    "name": "negation does not leak across a sentence boundary",
+    "text": "We do not sell your personal data. We may disclose your information to third parties who help us operate the service.",
+    "fires": ["data-sharing-third-parties", "data-selling-none"],
+    "notFires": ["data-selling"]
+  },
+  {
+    "name": "AI training opt-out is not an AI training concern",
+    "text": "Your content will not be used to train our AI models.",
+    "fires": ["ai-training-excluded"],
+    "notFires": ["ai-training"]
+  },
+  {
+    "name": "actual AI training fires",
+    "text": "We use the content you upload to train our machine learning models.",
+    "fires": ["ai-training"]
+  },
+  {
+    "name": "no automatic renewal is not an auto-renewal concern",
+    "text": "Your subscription does not automatically renew and will simply expire.",
+    "notFires": ["auto-renewal"]
+  },
+  {
+    "name": "actual auto-renewal fires",
+    "text": "Your subscription will automatically renew each month unless you cancel beforehand.",
+    "fires": ["auto-renewal"]
+  },
+  {
+    "name": "declining to work with advertisers is not an advertising concern",
+    "text": "We do not share your data with advertising partners or ad networks.",
+    "notFires": ["data-sharing-advertising", "data-sharing-third-parties"]
+  },
+  {
+    "name": "descriptive preamble fires nothing",
+    "text": "This Privacy Policy explains how we collect, use and protect your personal data when you use our service.",
+    "notFires": ["data-selling", "data-sharing-third-parties", "ai-training"]
+  },
+  {
+    "name": "arbitration opt-out is favourable, not a concern",
+    "text": "You may opt out of arbitration by writing to us within 30 days of accepting these terms.",
+    "fires": ["arbitration-optout"]
+  },
+  {
+    "name": "binding arbitration fires",
+    "text": "Any dispute arising under these terms shall be resolved by binding arbitration on an individual basis.",
+    "fires": ["arbitration-binding"]
+  },
+  {
+    "name": "broad content licence fires on both licence rules",
+    "text": "You grant us a perpetual, irrevocable, worldwide, royalty-free licence to use, reproduce and modify your content.",
+    "fires": ["content-license-broad", "content-license-grant"]
+  },
+  {
+    "name": "retained ownership is favourable",
+    "text": "You retain ownership of your content and we claim no ownership over anything you upload.",
+    "fires": ["content-ownership-retained"]
+  },
+  {
+    "name": "open-ended retention fires",
+    "text": "We retain your personal data for as long as necessary to provide the service to you.",
+    "fires": ["retention-indefinite"]
+  },
+  {
+    "name": "abbreviations do not truncate the quote",
+    "text": "We share your data with vendors (e.g. payment processors) and other third parties who support the service.",
+    "fires": ["data-sharing-third-parties"],
+    "quoteMustContain": {
+      "data-sharing-third-parties": "e.g. payment processors"
+    }
+  },
+  {
+    "name": "class action waiver fires",
+    "text": "You and we agree to waive any right to bring a class action or representative proceeding.",
+    "fires": ["class-action-waiver"]
+  },
+  {
+    "name": "unilateral change fires",
+    "text": "We reserve the right to modify these terms at any time in our sole discretion.",
+    "fires": ["unilateral-changes"]
+  },
+  {
+    "name": "deletion rights are favourable",
+    "text": "You can request the deletion of your personal data at any time from your account settings.",
+    "fires": ["data-deletion-available"]
+  }
+]

@@ -240,3 +240,130 @@ ul.links .kind {
     color: var(--muted);
     font-size: 11px;
 }
+
+/* ------------------------------------------------------------- findings */
+
+.risk-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 0 10px;
+}
+
+.risk-pill {
+    padding: 3px 10px;
+    border-radius: 999px;
+
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #14161a;
+}
+
+.risk-high { background: var(--bad); }
+.risk-medium { background: var(--warn); }
+.risk-low { background: var(--ok); }
+
+.concern-count {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.verdict-clear {
+    margin: 12px 0 6px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+ul.findings {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.finding {
+    padding: 10px 0;
+    border-top: 1px solid var(--line);
+}
+
+.f-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.dot {
+    width: 9px;
+    height: 9px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+}
+
+.dot.sev-high { background: var(--bad); }
+.dot.sev-medium { background: var(--warn); }
+.dot.sev-low { background: var(--muted); }
+.dot.sev-good { background: var(--ok); }
+
+.f-title {
+    font-weight: 600;
+    flex: 1 1 auto;
+}
+
+.chip {
+    padding: 1px 7px;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+
+.chip.sev-high { color: var(--bad); }
+.chip.sev-medium { color: var(--warn); }
+.chip.sev-low { color: var(--muted); }
+.chip.sev-good { color: var(--ok); }
+
+.f-desc {
+    margin: 4px 0 0 17px;
+    color: var(--muted);
+}
+
+details.f-quote {
+    margin: 6px 0 0 17px;
+    border-top: none;
+    padding-top: 0;
+}
+
+details.f-quote blockquote {
+    margin: 6px 0 0;
+    padding: 7px 10px;
+
+    background: var(--panel);
+    border-left: 2px solid var(--line);
+    border-radius: 0 5px 5px 0;
+
+    font-size: 12px;
+    color: var(--fg);
+}
+
+.f-meta {
+    margin: 5px 0 0;
+    color: var(--muted);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+}
+
+.tier-note {
+    margin: 12px 0 0;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+
+    color: var(--muted);
+    font-size: 11px;
+}
+
+details.page-details {
+    margin-top: 12px;
+}

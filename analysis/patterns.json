@@ -1,0 +1,412 @@
+{
+  "version": 1,
+  "notes": "Rule shape: a rule fires when one `any` pattern matches, every `near` pattern also appears in the same sentence, and no `not` pattern appears in the negation window around the match. Patterns are JavaScript regular expression sources, matched case-insensitively. `%GAP%` means any character that does not end a sentence.",
+  "defaultNotNotes": "Applied to every rule whose severity is not `good`. Three classes of sentence mention a practice without being it, and each was found by running the corpus rather than by reasoning up front. (1) Guarantees: 'Never selling your information or sharing it with third parties' produced three high-severity findings on the most privacy-friendly policy in the corpus, because `never sell` does not match `never selling` -- so verb stems here are deliberately unterminated, and a gap is allowed after `not` so that 'do not rent or sell' is caught. (2) Scope disclaimers: 'this policy does not address the practices of third parties'. (3) User controls: 'you can disable Personalized Ads'.",
+  "defaultNot": [
+    "\\bnever%GAP%{0,25}(sell|shar|disclos|us|track|provid|transfer|collect|retain)",
+    "\\b(do|does|will|shall|would|can|may) not%GAP%{0,30}(sell|share|disclose|rent|use|track|provide|transfer|collect|retain|permit|allow|cover|address|apply|extend|govern)",
+    "\\bdon'?t%GAP%{0,25}(sell|share|disclose|use|track)",
+    "\\bif you (do not|don'?t) want\\b",
+    "\\byou (can|may) (disable|turn off|opt out|control|manage|limit|choose|prevent)\\b"
+  ],
+  "rules": [
+    {
+      "id": "data-selling",
+      "category": "data_selling",
+      "severity": "high",
+      "title": "Personal data may be sold",
+      "description": "This service may sell your personal information to others.",
+      "any": [
+        "\\bsell(s|ing)? (your |their |the )?(personal )?(information|data)\\b",
+        "\\bsale of (your )?personal (information|data)\\b",
+        "\\bsell(s|ing)? %GAP%{0,30}to third part"
+      ],
+      "not": [
+        "\\b(do|does|will|would|shall|can|may) not sell\\b",
+        "\\bnever sell\\b",
+        "\\bdon'?t sell\\b",
+        "\\bno sale of\\b",
+        "\\bwithout selling\\b"
+      ],
+      "confidence": 0.7
+    },
+    {
+      "id": "data-selling-none",
+      "category": "data_selling",
+      "severity": "good",
+      "title": "Data is not sold",
+      "description": "The policy states your personal information is not sold.",
+      "any": [
+        "\\b(do|does|will|would) not sell your (personal )?(information|data)\\b",
+        "\\bnever sells? your (personal )?(information|data)\\b",
+        "\\bwe (do not|don'?t) sell\\b"
+      ],
+      "confidence": 0.8
+    },
+    {
+      "id": "data-sharing-third-parties",
+      "category": "data_sharing",
+      "severity": "high",
+      "title": "Data sharing with third parties",
+      "description": "Your information may be shared with companies outside this service.",
+      "any": [
+        "\\b(share|shares|sharing|disclose|discloses|disclosing|provide|transfer)%GAP%{0,60}\\bthird[- ]part(y|ies)\\b",
+        "\\bthird[- ]part(y|ies)%GAP%{0,40}(receive|may access|have access)\\b"
+      ],
+      "not": [
+        "\\b(do|does|will|shall|would|may) not (share|disclose|sell|provide|transfer)\\b",
+        "\\bnever (share|disclose|sell)\\b",
+        "\\bdon'?t (share|disclose)\\b",
+        "\\bno third[- ]part"
+      ],
+      "confidence": 0.6
+    },
+    {
+      "id": "data-sharing-advertising",
+      "category": "data_sharing",
+      "severity": "high",
+      "title": "Data shared for advertising",
+      "description": "Your information may reach advertising or marketing companies.",
+      "any": [
+        "\\badvertising partners?\\b",
+        "\\bmarketing partners?\\b",
+        "\\badvertising networks?\\b",
+        "\\bad networks?\\b",
+        "\\bdata brokers?\\b",
+        "\\bfor (advertising|marketing|targeted advertising) purposes\\b",
+        "\\b(targeted|personalised|personalized|interest[- ]based) (ads?|advertising)\\b"
+      ],
+      "not": [
+        "\\b(do|does|will|shall|would) not (share|sell|work with|use|provide)%GAP%{0,40}(advertis|marketing)",
+        "\\bnever%GAP%{0,25}(advertis|marketing) (partners|purposes)\\b",
+        "\\bno advertising partners\\b",
+        "\\bopt[- ]out of%GAP%{0,25}(targeted )?(ads?|advertising)\\b"
+      ],
+      "confidence": 0.65
+    },
+    {
+      "id": "data-sharing-affiliates",
+      "category": "data_sharing",
+      "severity": "medium",
+      "title": "Data shared inside the corporate group",
+      "description": "Your information may be passed to affiliates or parent companies.",
+      "any": [
+        "\\b(share|shares|disclose|discloses|provide|transfer)%GAP%{0,50}\\b(affiliates|subsidiaries|group companies|corporate family)\\b",
+        "\\baffiliates and (partners|subsidiaries)\\b"
+      ],
+      "not": [
+        "\\b(do|does|will|shall) not (share|disclose|provide|transfer)\\b",
+        "\\bnever (share|disclose)\\b"
+      ],
+      "confidence": 0.55
+    },
+    {
+      "id": "data-sharing-none",
+      "category": "data_sharing",
+      "severity": "good",
+      "title": "Data is not shared with third parties",
+      "description": "The policy states your information is not shared outside the service.",
+      "any": [
+        "\\bwe (do|will|shall) not (share|disclose)%GAP%{0,40}(personal )?(information|data)\\b",
+        "\\bnever (share|disclose) your (personal )?(information|data)\\b"
+      ],
+      "confidence": 0.75
+    },
+    {
+      "id": "ai-training",
+      "category": "ai_training",
+      "severity": "high",
+      "title": "Content used to train AI",
+      "description": "What you upload or write may be used to train machine learning models.",
+      "any": [
+        "\\btrain(ing)? (our|its|their|the) (ai |a\\.i\\. |machine learning |ml |language |generative )?models?\\b",
+        "\\bto train (our |its |their )?(ai|models|algorithms|systems)\\b",
+        "\\bused to (train|improve) (our )?(ai|machine learning|models)\\b",
+        "\\b(develop|improve) (our )?(ai|machine learning) models?\\b"
+      ],
+      "not": [
+        "\\bnot (be )?used to train\\b",
+        "\\b(do|does|will) not (use|train)%GAP%{0,40}train",
+        "\\bwill not be used to train\\b",
+        "\\bexcluded from (ai |model )?training\\b"
+      ],
+      "confidence": 0.7
+    },
+    {
+      "id": "ai-training-excluded",
+      "category": "ai_training",
+      "severity": "good",
+      "title": "Content is not used for AI training",
+      "description": "The policy says your content stays out of model training, or lets you opt out.",
+      "any": [
+        "\\bopt[- ]out of%GAP%{0,30}(ai|model|machine learning) training\\b",
+        "\\byour (content|data) (is|are|will) not( be)? used to train\\b",
+        "\\b(do|does|will) not use your (content|data) to train\\b"
+      ],
+      "confidence": 0.75
+    },
+    {
+      "id": "content-license-broad",
+      "category": "content_license",
+      "severity": "high",
+      "title": "Broad licence over your content",
+      "description": "The licence you grant over your content is unusually wide or hard to revoke.",
+      "any": [
+        "\\b(perpetual|irrevocable)\\b",
+        "\\broyalty[- ]free\\b",
+        "\\bsub[- ]?licen[cs]",
+        "\\btransferable%GAP%{0,40}licen[cs]e\\b"
+      ],
+      "near": [
+        "\\blicen[cs]e\\b"
+      ],
+      "confidence": 0.6
+    },
+    {
+      "id": "content-license-grant",
+      "category": "content_license",
+      "severity": "medium",
+      "title": "You grant a licence over your content",
+      "description": "Uploading content gives this service rights to use it.",
+      "any": [
+        "\\byou grant (us|%GAP%{0,25}) an? %GAP%{0,80}licen[cs]e\\b",
+        "\\byou hereby grant\\b"
+      ],
+      "confidence": 0.6
+    },
+    {
+      "id": "content-ownership-retained",
+      "category": "content_license",
+      "severity": "good",
+      "title": "You keep ownership of your content",
+      "description": "The policy confirms you retain ownership of what you upload.",
+      "any": [
+        "\\byou (retain|keep|own)%GAP%{0,30}(ownership|rights|title)\\b",
+        "\\bwe claim no ownership\\b",
+        "\\byour content remains yours\\b"
+      ],
+      "confidence": 0.7
+    },
+    {
+      "id": "auto-renewal",
+      "category": "auto_renewal",
+      "severity": "medium",
+      "title": "Subscription renews automatically",
+      "description": "Billing continues on its own unless you cancel first.",
+      "any": [
+        "\\bautomatically renew",
+        "\\bauto[- ]renew",
+        "\\brenews? automatically\\b",
+        "\\bcontinues? until (you )?cancel",
+        "\\brecurring (subscription|billing|payment|charge)"
+      ],
+      "not": [
+        "\\b(does|do|will) not automatically renew\\b",
+        "\\bno automatic renewal\\b",
+        "\\bwill not renew\\b"
+      ],
+      "confidence": 0.7
+    },
+    {
+      "id": "cancel-anytime",
+      "category": "auto_renewal",
+      "severity": "good",
+      "title": "You can cancel at any time",
+      "description": "The policy says the subscription can be cancelled whenever you like.",
+      "any": [
+        "\\bcancel (your subscription )?at any time\\b",
+        "\\bno automatic renewal\\b"
+      ],
+      "confidence": 0.6
+    },
+    {
+      "id": "arbitration-binding",
+      "category": "arbitration",
+      "severity": "high",
+      "title": "Disputes go to binding arbitration",
+      "description": "You may be giving up the right to take a dispute to court.",
+      "any": [
+        "\\bbinding arbitration\\b",
+        "\\bagree to arbitrat",
+        "\\bresolved (by|through|in)%GAP%{0,20}arbitration\\b",
+        "\\bsubmit to arbitration\\b",
+        "\\barbitration agreement\\b"
+      ],
+      "confidence": 0.75
+    },
+    {
+      "id": "arbitration-optout",
+      "category": "arbitration",
+      "severity": "good",
+      "title": "You can opt out of arbitration",
+      "description": "The policy offers a way to reject the arbitration clause.",
+      "any": [
+        "\\bopt[- ]out of (the )?(binding )?arbitration\\b",
+        "\\breject (the )?arbitration (agreement|provision|clause)\\b"
+      ],
+      "confidence": 0.7
+    },
+    {
+      "id": "class-action-waiver",
+      "category": "class_action_waiver",
+      "severity": "high",
+      "title": "Class action waiver",
+      "description": "You may be giving up the right to join a group lawsuit.",
+      "any": [
+        "\\bclass action waiver\\b",
+        "\\bwaiv(e|er|es|ing)%GAP%{0,40}class action\\b",
+        "\\bno class actions?\\b",
+        "\\bclass or representative (action|proceeding)\\b",
+        "\\bnot%GAP%{0,30}(participate in|join)%GAP%{0,20}class action\\b"
+      ],
+      "confidence": 0.75
+    },
+    {
+      "id": "unilateral-changes",
+      "category": "unilateral_changes",
+      "severity": "medium",
+      "title": "Terms can change at any time",
+      "description": "This service can rewrite the agreement without your agreement.",
+      "any": [
+        "\\bwe (may|can) (modify|change|update|revise|amend) (these|the|our) (terms|agreement|policy)\\b",
+        "\\bwe reserve the right to (change|modify|amend|update)\\b",
+        "\\bwe may (change|modify|update)%GAP%{0,40}(these terms|this agreement|this policy|the terms)\\b"
+      ],
+      "confidence": 0.6
+    },
+    {
+      "id": "continued-use-acceptance",
+      "category": "unilateral_changes",
+      "severity": "medium",
+      "title": "Continuing to use it means accepting changes",
+      "description": "You are treated as agreeing to new terms simply by carrying on.",
+      "any": [
+        "\\bcontinued use%GAP%{0,60}(constitutes|indicates|means)%GAP%{0,30}accept",
+        "\\bby continuing to use%GAP%{0,40}you (accept|agree)\\b"
+      ],
+      "confidence": 0.65
+    },
+    {
+      "id": "tracking-third-party",
+      "category": "tracking_cookies",
+      "severity": "medium",
+      "title": "Third-party tracking",
+      "description": "Other companies can track you through this service.",
+      "any": [
+        "\\bthird[- ]party cookies\\b",
+        "\\bweb beacons?\\b",
+        "\\bpixel tags?\\b",
+        "\\btracking pixels?\\b",
+        "\\bdevice fingerprint"
+      ],
+      "confidence": 0.6
+    },
+    {
+      "id": "tracking-general",
+      "category": "tracking_cookies",
+      "severity": "low",
+      "title": "Cookies and analytics",
+      "description": "Standard cookie and analytics tracking is in use.",
+      "any": [
+        "\\bcookies and similar (technologies|tracking)\\b",
+        "\\btracking technologies\\b",
+        "\\banalytics (providers|partners|services)\\b"
+      ],
+      "confidence": 0.5
+    },
+    {
+      "id": "retention-indefinite",
+      "category": "data_retention",
+      "severity": "medium",
+      "title": "Data kept indefinitely",
+      "description": "There is no clear end date for how long your data is stored.",
+      "any": [
+        "\\bretain%GAP%{0,40}indefinitely\\b",
+        "\\bindefinite(ly)? (retention|period)\\b",
+        "\\bas long as (we deem )?necessary\\b",
+        "\\bretain%GAP%{0,30}as long as your account\\b"
+      ],
+      "confidence": 0.6
+    },
+    {
+      "id": "termination-at-will",
+      "category": "account_termination",
+      "severity": "medium",
+      "title": "Your account can be closed at any time",
+      "description": "Access can be suspended or removed without warning.",
+      "any": [
+        "\\b(terminate|suspend)%GAP%{0,50}(at any time|without notice|for any reason|in our sole discretion)\\b",
+        "\\bsuspend or terminate\\b"
+      ],
+      "confidence": 0.6
+    },
+    {
+      "id": "liability-limits",
+      "category": "liability_limits",
+      "severity": "low",
+      "title": "Limited liability",
+      "description": "The service limits what it can be held responsible for. This is standard in most agreements.",
+      "any": [
+        "\\blimitation of liability\\b",
+        "\\bin no event (shall|will)\\b",
+        "\\bdisclaims? all warranties\\b",
+        "\\bas is,? without warrant"
+      ],
+      "confidence": 0.5
+    },
+    {
+      "id": "jurisdiction",
+      "category": "jurisdiction",
+      "severity": "low",
+      "title": "Governing law and venue",
+      "description": "Disputes are handled under a specific jurisdiction's law, which may not be yours.",
+      "any": [
+        "\\bgoverned by%GAP%{0,30}laws of\\b",
+        "\\bexclusive jurisdiction\\b",
+        "\\bvenue (shall|will) be\\b"
+      ],
+      "confidence": 0.55
+    },
+    {
+      "id": "age-restriction",
+      "category": "age_restrictions",
+      "severity": "low",
+      "title": "Age restrictions",
+      "description": "There is a minimum age for using this service.",
+      "any": [
+        "\\bunder the age of (13|14|16|18)\\b",
+        "\\bat least (13|14|16|18) years\\b",
+        "\\bnot intended for (use by )?children\\b"
+      ],
+      "confidence": 0.6
+    },
+    {
+      "id": "data-deletion-available",
+      "category": "data_deletion",
+      "severity": "good",
+      "title": "You can delete your data",
+      "description": "The policy describes how to have your data removed.",
+      "any": [
+        "\\brequest (the )?(deletion|erasure) of your (personal )?(data|information)\\b",
+        "\\bdelete your account\\b",
+        "\\bright to (erasure|be forgotten)\\b",
+        "\\byou (can|may) (request )?delete\\b"
+      ],
+      "confidence": 0.7
+    },
+    {
+      "id": "data-portability",
+      "category": "data_portability",
+      "severity": "good",
+      "title": "You can export your data",
+      "description": "The policy lets you take a copy of your data elsewhere.",
+      "any": [
+        "\\bdata portability\\b",
+        "\\bexport (a copy of )?your data\\b",
+        "\\bmachine[- ]readable format\\b",
+        "\\breceive a copy of your (personal )?data\\b"
+      ],
+      "confidence": 0.7
+    }
+  ]
+}
