@@ -2,7 +2,7 @@
 
 A Firefox extension that reads Terms of Service / Privacy Policies and tells you what to be cautious about, **before** you click "I agree".
 
-Status: **Phases 1-5 complete.** 68/68 across six suites; `web-ext lint` is clean. Tier 1 runs offline on every policy; tier 2 is opt-in, BYO-key, cached, and every AI finding must cite text that actually appears on the page. Findings jump to the clause on the page. An on-page panel warns about policies a form is asking you to agree to, without the popup being opened. Only Phase 6 (distribution) remains.
+Status: **All six phases complete.** 68/68 across six suites; `web-ext lint` is clean; the extension packages to a 72 KB zip and is working in Firefox. Tier 1 runs offline on every policy; tier 2 is opt-in, BYO-key, cached, and every AI finding must cite text that actually appears on the page. What remains is the AMO submission itself, which is an account and a listing rather than code.
 
 ---
 
@@ -318,7 +318,10 @@ The general lesson: a feature discovered only by people who already know the pro
 - **Dismissal is permanent per host** and only resettable by clearing extension storage. A "show these again" control belongs in settings.
 - **The panel has not been tried on a hostile layout** — a site with its own fixed bottom-right element will collide with it. Nothing breaks, but it may overlap.
 
-### Phase 6 — Distribution
+### Phase 6 — Distribution — **done, up to submission**
+
+Icons, manifest metadata, a privacy policy, a README, and npm scripts for lint/build/run. The package builds clean and contains only what should ship.
+
 
 - `web-ext lint` is clean (0 errors) and runs with `npx --yes web-ext lint --source-dir . --ignore-files "test/**"`. Note `data_collection_permissions` forces `strict_min_version` to 140 — the key did not exist before Firefox 140, and the linter fails the combination.
 - Manifest hygiene: `data_collection_permissions` currently declares `["none"]`. **That becomes false the moment the LLM tier ships** — page content leaves the browser. Update it, and put a clear first-run disclosure in front of the first network call. AMO review will look at exactly this.
@@ -327,6 +330,30 @@ The general lesson: a feature discovered only by people who already know the pro
 - Chrome port: the code is nearly portable already, but `browser.*` and returning a promise from `onMessage` are Firefox idioms. A `browser = globalThis.browser ?? chrome` shim plus `sendResponse` handling covers most of it. Firefox first, though — MV3 there is friendlier and the audience overlaps with privacy-minded users.
 
 ---
+
+#### What shipping actually needed
+
+**An icon, which had simply been forgotten.** Five phases in, the extension had no `icons` key and no `action.default_icon` — the toolbar button was a generic puzzle piece, which is part of why it was hard to find in the first place. One flat SVG covers every size; detail is deliberately coarse because 16px in a toolbar is where the icon has to work, and anything finer turns to mush.
+
+**Checking what goes in the box.** The build is 72 KB and 34 entries. Without an ignore list it would also have carried `test/fixtures/` — 2.8 MB of other companies' saved web pages, which is both wasteful and a strange thing to redistribute. The `webExt.ignoreFiles` list in `package.json` keeps tests, docs and tooling out, and the contents are asserted rather than assumed.
+
+**A privacy policy that is short because the extension does little.** `PRIVACY.md` states what runs locally, the exact two destinations anything is ever sent to, a table of what is stored and for how long, and the plain admission that the API key is not encrypted. AMO reviewers will read this against the manifest, so it names the same optional permissions the manifest declares.
+
+#### Deliberately not done
+
+- **No hosted proxy.** It would remove BYO keys and allow a shared cache across users — one analysis of a major ToS serving everyone — but it means running a server, an abuse surface, and someone else's bill. Not worth it before there are users.
+- **No Chrome port.** The code is close: `browser.*` and returning a promise from `onMessage` are the Firefox idioms, and a `globalThis.browser ?? chrome` shim plus `sendResponse` handling covers most of it. But MV3 background pages differ (`service_worker` versus event page), and Firefox-first was the right call for an audience that cares about this.
+- **No AMO submission.** That needs a developer account, listing copy, screenshots and a review cycle — decisions for the author, not the code.
+
+#### Submission checklist
+
+1. `npm run lint` — must be 0 errors (one Android-only warning is expected and is a `strict_min_version` artefact).
+2. `npm run build` — produces `web-ext-artifacts/policy_guard-<version>.zip`.
+3. Confirm the archive has no `test/`, `node_modules/` or docs.
+4. Host `PRIVACY.md` somewhere linkable and paste the URL into the AMO listing.
+5. In the listing, state plainly that AI analysis is optional, off by default, and uses the user's own API key.
+6. Declare data collection to match `data_collection_permissions`: none required, `websiteContent` optional.
+7. Note for reviewers: no build step — the submitted source is the code that runs.
 
 ## 5. Testing
 
@@ -373,6 +400,6 @@ Two caveats to keep in mind when reading results: fixtures are static HTML, so a
 4. ~~Phase 2 rules engine + the popup list UI.~~ **Done** — and worth showing someone.
 5. ~~Phase 3 LLM behind a feature flag.~~ **Done** — opt-in, off by default, and gated behind an explicit consent tick.
 6. ~~Cache, then cost controls, then the signup-page check.~~ **Done** — the badge itself is Phase 5.
-7. ~~Preferences, polish.~~ **Done.** AMO submission is what remains.
+7. ~~Preferences, polish, packaging.~~ **Done.** The AMO submission itself is what remains.
 
 Phases 1–2 alone are a genuinely useful extension. Ship that, then add intelligence.

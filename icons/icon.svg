@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Policy Guard">
+    <title>Policy Guard</title>
+
+    <!--
+        A shield holding a document. Detail is deliberately coarse: this has to
+        stay legible at 16px in a toolbar, where anything finer turns to mush.
+        One flat colour, no gradients, no thin strokes.
+    -->
+
+    <path
+        d="M32 4 L56 13 V31 C56 44.5 45.6 54.8 32 60 C18.4 54.8 8 44.5 8 31 V13 Z"
+        fill="#3b6df5"/>
+
+    <!-- Document lines. The short last line reads as text even when tiny. -->
+    <rect x="20" y="22" width="24" height="4.5" rx="2.25" fill="#ffffff"/>
+    <rect x="20" y="31" width="24" height="4.5" rx="2.25" fill="#ffffff"/>
+    <rect x="20" y="40" width="14" height="4.5" rx="2.25" fill="#ffffff"/>
+</svg>

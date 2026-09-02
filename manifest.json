@@ -1,8 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Policy Guard",
-  "version": "0.2.0",
-  "description": "Highlights important terms and privacy concerns before you agree.",
+  "version": "0.9.0",
+  "description": "Reads Terms of Service and Privacy Policies and tells you what to be cautious about, before you agree.",
+  "author": "grandizas",
+  "homepage_url": "https://github.com/grandizas/PolicyGuard",
+
+  "icons": {
+    "48": "icons/icon.svg",
+    "96": "icons/icon.svg"
+  },
 
   "permissions": [
     "activeTab",
@@ -17,7 +24,11 @@
 
   "action": {
     "default_title": "Policy Guard",
-    "default_popup": "popup/popup.html"
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "48": "icons/icon.svg",
+      "96": "icons/icon.svg"
+    }
   },
 
   "options_ui": {
