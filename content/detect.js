@@ -242,7 +242,11 @@
     /* ----------------------------------------------------- policy links out */
 
     const LINK_TEXT = /\b(terms|conditions|privacy|policy|policies|eula|licen[cs]e agreement|legal)\b/i;
-    const AGREEMENT_TEXT = /\b(i (agree|accept|consent)|by (signing up|creating|clicking|continuing|registering)|you agree to)\b/i;
+    /**
+     * Language that means "clicking this commits you". Broad enough to cover the
+     * common phrasings, narrow enough that ordinary prose does not match.
+     */
+    const AGREEMENT_TEXT = /\b(i (agree|accept|consent)|you (agree|accept|consent|acknowledge)|by (signing up|signing in|creating|clicking|continuing|registering|submitting|proceeding)|(agree|accept|consent) to (the|our|these)|terms (and conditions )?apply)\b/i;
 
     function classifyLink(href, text) {
         if (/privacy/i.test(href) || /privacy/i.test(text)) {
@@ -300,7 +304,11 @@
                 continue;
             }
 
-            if (isForm || AGREEMENT_TEXT.test(node.textContent)) {
+            // Being inside a form is not consent. Plenty of ordinary pages have
+            // a search or newsletter form and a footer link to their terms, and
+            // treating that as "you are about to agree" put the panel on home
+            // pages. Agreement has to be stated, not inferred from a <form>.
+            if (AGREEMENT_TEXT.test(node.textContent)) {
                 return true;
             }
         }

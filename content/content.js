@@ -126,7 +126,7 @@
         try {
             context = await browser.runtime.sendMessage({
                 type: "BADGE_CONTEXT",
-                hostname: location.hostname
+                hostname: location.host
             });
         } catch (error) {
             return;
@@ -188,9 +188,15 @@
     let linkedLinks = [];
     const linkedResults = {};
 
+    let dismissed = false;
+
     function dismiss() {
+        dismissed = true;
         PolicyGuard.badge.remove();
-        browser.runtime.sendMessage({ type: "BADGE_DISMISS", hostname: location.hostname });
+
+        // `host` rather than `hostname`, so localhost:4200 and localhost:3000
+        // are different sites rather than one shared "localhost".
+        browser.runtime.sendMessage({ type: "BADGE_DISMISS", hostname: location.host });
     }
 
     function checkLinks(hrefs) {
@@ -199,6 +205,10 @@
 
     function onLinkResult(href, state) {
         linkedResults[href] = state;
+
+        if (dismissed) {
+            return;
+        }
 
         PolicyGuard.badge.showAgreementPrompt(
             { links: linkedLinks, results: linkedResults },

@@ -92,6 +92,21 @@
     }
   },
   {
+    "file": "neg-app-home.html",
+    "url": "http://localhost:4200/",
+    "expect": {
+      "isPolicy": false,
+      "links": {
+        "min": 2,
+        "nearAgreement": [],
+        "notNearAgreement": [
+          "Terms of Service",
+          "Privacy Policy"
+        ]
+      }
+    }
+  },
+  {
     "file": "neg-mozilla-home.html",
     "url": "https://www.mozilla.org/en-US/",
     "expect": {

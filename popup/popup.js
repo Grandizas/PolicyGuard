@@ -7,6 +7,7 @@ import { API_ORIGIN } from "../analysis/llm.js";
 
 const view = document.querySelector("#view");
 const rescanButton = document.querySelector("#rescan");
+const settingsButton = document.querySelector("#settings");
 
 /** Tab whose report is on screen, so polling knows what to re-read. */
 let currentTabId = null;
@@ -821,5 +822,10 @@ async function load(force, quiet) {
 }
 
 rescanButton.addEventListener("click", () => load(true, false));
+
+// Always available, whatever state the page is in. Settings used to be
+// reachable only while deep analysis was unconfigured, which meant the
+// entry point vanished as soon as someone finished setting it up.
+settingsButton.addEventListener("click", () => browser.runtime.openOptionsPage());
 
 load(false, false);

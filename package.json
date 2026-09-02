@@ -3,11 +3,10 @@
   "version": "0.9.0",
   "description": "Firefox extension that reads Terms of Service and Privacy Policies and flags what to be cautious about.",
   "private": true,
-  "type": "module",
   "scripts": {
-    "lint": "web-ext lint --source-dir .",
-    "build": "web-ext build --source-dir . --overwrite-dest",
-    "dev": "web-ext run --source-dir .",
+    "lint": "npx --yes web-ext lint --source-dir .",
+    "build": "npx --yes web-ext build --source-dir . --overwrite-dest",
+    "dev": "npx --yes web-ext run --source-dir .",
     "serve": "python -m http.server 8765"
   },
   "devDependencies": {

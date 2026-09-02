@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Examplr — ship faster</title>
+</head>
+<body>
+
+<!--
+    Hand-written, not captured from a real site.
+
+    The false positive found in testing: an ordinary application home page with
+    a search form, a newsletter form, and footer links to Terms and Privacy.
+    There is a form, there are controls, and there are policy links -- but
+    nobody is being asked to agree to anything, so no policy link here may be
+    flagged as sitting beside an agreement control.
+-->
+
+<header>
+    <nav>
+        <a href="/">Examplr</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/docs">Docs</a>
+    </nav>
+
+    <form action="/search" role="search">
+        <label for="q">Search</label>
+        <input id="q" name="q" type="search">
+        <button type="submit">Search</button>
+    </form>
+</header>
+
+<main>
+    <h1>Ship faster</h1>
+    <p>Examplr helps teams get from idea to production without the yak shaving.</p>
+
+    <form action="/subscribe" method="post">
+        <label for="email">Get the newsletter</label>
+        <input id="email" name="email" type="email">
+        <button type="submit">Subscribe</button>
+    </form>
+
+    <section>
+        <h2>Why teams choose us</h2>
+        <p>Fast builds, sensible defaults, and no surprises in your bill.</p>
+    </section>
+</main>
+
+<footer>
+    <form action="/feedback" method="post">
+        <label for="fb">Send feedback</label>
+        <input id="fb" name="fb" type="text">
+        <button type="submit">Send</button>
+        <a href="/legal/terms-of-service">Terms of Service</a>
+        <a href="/legal/privacy-policy">Privacy Policy</a>
+    </form>
+
+    <a href="/about">About</a>
+    <a href="/careers">Careers</a>
+</footer>
+
+</body>
+</html>

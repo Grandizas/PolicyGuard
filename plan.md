@@ -2,7 +2,7 @@
 
 A Firefox extension that reads Terms of Service / Privacy Policies and tells you what to be cautious about, **before** you click "I agree".
 
-Status: **All six phases complete.** 68/68 across six suites; `web-ext lint` is clean; the extension packages to a 72 KB zip and is working in Firefox. Tier 1 runs offline on every policy; tier 2 is opt-in, BYO-key, cached, and every AI finding must cite text that actually appears on the page. What remains is the AMO submission itself, which is an account and a listing rather than code.
+Status: **All six phases complete.** 69/69 across six suites; `web-ext lint` is clean; the extension packages to a 72 KB zip and is working in Firefox. Tier 1 runs offline on every policy; tier 2 is opt-in, BYO-key, cached, and every AI finding must cite text that actually appears on the page. What remains is the AMO submission itself, which is an account and a listing rather than code.
 
 ---
 
@@ -312,10 +312,23 @@ Pointing harder at the toolbar would have been the wrong fix. Two changes instea
 
 The general lesson: a feature discovered only by people who already know the product exists is not really shipped. That is not visible from tests — it needed someone opening the extension for the first time.
 
+#### Two bugs found by using it on a real dev server
+
+**The panel could not be closed.** `remove()` deleted the DOM node and nulled the shadow root, but every link-check result calls `showAgreementPrompt` again, which calls `ensureRoot()` and rebuilds it. On a form with two policies there are four such messages in flight, so pressing close was followed almost immediately by the panel returning. Dismissal is now a flag that outlives the node: once set, both render entry points are no-ops for the rest of the page's life.
+
+It only reproduced on a page where a link check was running, which is why it looked like "closeable on Meta's terms, not on my app".
+
+**Settings had no permanent entry point.** The popup only offered a settings link while deep analysis was *unconfigured*, as part of the "you need a key" message. Finishing setup therefore removed the only way back into settings from the toolbar — the on-page panel had a Settings link, the popup did not. It is now a button in the popup header alongside Rescan, visible in every state.
+
+**The panel appeared on a home page.** `nearAgreementControl` treated *being inside a `<form>`* as evidence of agreement. An ordinary app home page has a search form, a newsletter form, and footer links to Terms and Privacy — enough to satisfy that, with nobody agreeing to anything. Being inside a form is not consent; agreement now has to be *stated*, matched against a broadened phrase list. `neg-app-home.html` is the regression fixture, and it is a hand-written home page rather than a captured one so the shape is unambiguous.
+
+Dismissal is also keyed on `location.host` rather than `hostname`, so `localhost:4200` and `localhost:3000` are no longer the same site.
+
 #### Still open at the end of Phase 5
 
 - **Auto-analysis is tier 1 only.** The panel never triggers a paid AI call on its own, and should not — but that means the on-page summary is always the rougher read.
 - **Dismissal is permanent per host** and only resettable by clearing extension storage. A "show these again" control belongs in settings.
+- **The agreement heuristic now errs toward silence.** A signup form that puts a bare "Terms" link beside a checkbox with no agreement wording will be missed. That is the right side to err on for something that appears uninvited, but it is a real gap.
 - **The panel has not been tried on a hostile layout** — a site with its own fixed bottom-right element will collide with it. Nothing breaks, but it may overlap.
 
 ### Phase 6 — Distribution — **done, up to submission**

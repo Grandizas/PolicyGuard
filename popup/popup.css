@@ -525,3 +525,9 @@ summary:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
 }
+
+.bar-actions {
+    display: flex;
+    gap: 6px;
+    flex: 0 0 auto;
+}

@@ -157,7 +157,19 @@
     let host = null;
     let root = null;
 
+    /**
+     * Dismissal has to outlive the panel object, not just the DOM node.
+     *
+     * Link checks report back asynchronously and each result re-renders. With
+     * `remove()` alone, a result arriving after the close button was pressed
+     * called `ensureRoot()` and built the panel again -- so on a form with two
+     * policies the panel kept coming back and could not be closed at all.
+     */
+    let dismissed = false;
+
     function remove() {
+        dismissed = true;
+
         if (host) {
             host.remove();
             host = null;
@@ -235,6 +247,10 @@
      * may not even have pinned -- is not a way to show them the rest.
      */
     function showPolicy(data, handlers) {
+        if (dismissed) {
+            return;
+        }
+
         const { riskLevel, counts, findings } = data;
         const shadow = ensureRoot();
 
@@ -327,6 +343,10 @@
      * read. Offers to read them in place.
      */
     function showAgreementPrompt({ links, results }, handlers) {
+        if (dismissed) {
+            return;
+        }
+
         const shadow = ensureRoot();
 
         for (const node of Array.from(shadow.querySelectorAll(".card"))) {

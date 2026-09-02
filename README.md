@@ -38,8 +38,9 @@ Requires Firefox 140 or later.
 
 ## Using AI analysis
 
-Optional. Open the extension's settings, enable deep analysis, accept the
-disclosure, and paste an Anthropic API key.
+Optional. Open the extension's settings — the **Settings** button in the popup,
+or the link at the bottom of the on-page panel — then enable deep analysis,
+accept the disclosure, and paste an Anthropic API key.
 
 - A key created inside a workspace also needs its **Workspace ID**; a personal
   key does not.
@@ -53,11 +54,15 @@ Your key is stored unencrypted in extension storage — see
 
 ## Development
 
+No install step is needed — the scripts fetch `web-ext` through `npx` on first
+use. Run `npm install` if you would rather pin it locally; the scripts will
+then use that copy.
+
 ```bash
 npm run lint     # web-ext lint
 npm run build    # package into web-ext-artifacts/
 npm run dev      # load into a temporary Firefox profile
-npm run serve    # test server on :8765, then open the URLs below
+npm run serve    # test server on :8765 (needs Python), then open the URLs below
 ```
 
 The test suite runs in a browser and needs no dependencies:
