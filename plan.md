@@ -2,7 +2,7 @@
 
 A Firefox extension that reads Terms of Service / Privacy Policies and tells you what to be cautious about, **before** you click "I agree".
 
-Status: scaffold exists (`manifest.json`, `content.js`, `popup.js/html/css`) — the popup can detect that a page *looks* legal. Everything below is the path from there to the product in the mockups.
+Status: **Phase 1 complete.** Detection and extraction work against a 9-fixture corpus (9/9), the popup reports what it found, and `web-ext lint` is clean. Findings are not produced yet — that is Phase 2. Not yet loaded in a real Firefox profile; see the note at the end of Phase 1.
 
 ---
 
@@ -68,9 +68,15 @@ popup/
 options/
   options.html/.css/.js  # API key, concern preferences, privacy toggles
 test/
-  fixtures/              # saved real-world policy HTML
-  *.test.js
+  runner.html            # assertion suite over the fixture corpus
+  popup-preview.html     # the real popup, real extraction, stubbed APIs
+  fixtures/
+    index.json           # fixture -> original URL + expectations
+    *.html               # saved real-world policy HTML
 ```
+
+Everything above `analysis/` exists today; `analysis/`, `options/` and the
+highlighting half of `content/` arrive with Phases 2, 3 and 5.
 
 No build step to start. Use ES modules (`"type": "module"` in the background, `<script type="module">` in the popup) and plain JS. Add a bundler only when a dependency demands it — for a two-panel extension it's mostly ceremony.
 
@@ -117,14 +123,34 @@ Keep this list closed. It is the join key between the rules engine, the LLM outp
 
 ## 4. Phases
 
-### Phase 1 — Detection & extraction (foundation)
+### Phase 1 — Detection & extraction (foundation) — **done**
 
 Make the extension reliably answer "is there a policy here, and what is its text?"
 
-- **`detect.js`**: score a page on URL patterns (`/terms`, `/privacy`, `/legal`, `/eula`, `/tos`), `<h1>`/`<title>` matching, and legal-phrase density (occurrences per 1000 words of "hereby", "shall", "warranties", "indemnify", "governing law"). Density is the important signal — it's what separates an actual policy from a blog post *about* privacy policies. Require a combined threshold, not any single hit.
-- **`extract.js`**: replace `document.body.innerText`. Walk the DOM, drop `nav`, `header`, `footer`, `script`, `style`, `[aria-hidden]`, and cookie banners. Prefer `<main>` / `<article>` / the densest text container. Preserve heading structure — section titles ("Arbitration", "Your Rights") are strong evidence and measurably improve LLM results. Emit `{ sections: [{heading, text, charStart}], fullText }`.
-- Also handle policies rendered inside a scrollable `<div>` or `<iframe>` on signup pages — common, and `innerText` on body misses them.
-- **Deliverable**: popup shows "Policy detected — 8,400 words, 14 sections" with correct extraction on 10 real sites.
+- **`detect.js`**: scores a page on URL patterns (`/terms`, `/privacy`, `/legal`, `/eula`, `/tos`), `<h1>`/`<title>` matching, legal-phrase density, and — added after the corpus proved it necessary — how much the text addresses its reader. Caps are URL 25 / title 25 / density 20 / variety 10 / address 20, threshold 45.
+- **`extract.js`**: replaces `document.body.innerText`. Drops `nav`, `header`, `footer`, `script`, `style`, form controls and cookie banners; prefers `<main>` / `<article>` / the densest low-link-density container; preserves heading structure. Emits `{ sections, fullText }` with char offsets.
+- Same-origin `<iframe>` content is extracted and adopted when it beats the host document — the signup-page case.
+- **Delivered**: popup reports "Policy detected — 4,431 words, 15 sections" with the detection breakdown, on a 9-fixture corpus that passes 9/9.
+
+#### Two things the corpus changed
+
+**1. Legalese density does not separate a policy from an article about policies.** The plan assumed it would. It does not: GitHub's ToS scores 7.9 markers per 1000 words and Wikipedia's *article* on privacy policies scores 7.0. With URL and title both matching, that article scored 72/100 and was confidently misclassified.
+
+What does separate them is **voice**. A policy addresses its reader; an encyclopedia article describes policies in the third person. Measured across the corpus, real policies run 45–85 first/second-person pronouns per 1000 words; the Wikipedia article sits at 3.4 and the article on cats at 0.3. That is a 13× gap where density had none.
+
+It is implemented as a **veto, not another summand** — adding 20 more points to a page already scoring 72 changes nothing, so `isPolicy` requires the address density to clear 10 per 1000 regardless of total score.
+
+**2. Hiding markers cannot be blanket exclusions.** Apple's privacy policy keeps its body in `<div class="accordion-panel">` elements marked `aria-hidden="true"` until expanded. Excluding those on sight yielded **239 words out of 22,700** — and nothing about that result looked wrong from the outside. We would have analyzed 8% of the document and reported it clean.
+
+The rule is now size-based: `aria-hidden`, `[hidden]`, `display:none` and `visibility:hidden` elements are dropped only under 400 characters of text. Above that they are collapsed content, not chrome, and the count is surfaced in the popup ("11 collapsed sections were opened up to read the full document"). Apple went 239 → 4,431 words. `opacity: 0` was removed as a hiding signal entirely — scroll-reveal animations leave real content at zero opacity until script runs.
+
+Both failures share a shape worth remembering: **silent under-extraction looks exactly like a clean policy.** That is the argument for the `degraded` flag, the collapsed-section count, and eventually for a word-count sanity check against the page's own text.
+
+#### Still open at the end of Phase 1
+
+- **Not yet loaded in Firefox.** Everything is verified through the fixture harness and `web-ext lint`; nothing has run in a real profile via `about:debugging`. Expect the first real load to surface something — most likely around the event-page background or the `scripting.executeScript` fallback path, neither of which the harness exercises.
+- **Cross-origin iframes are counted, not read.** Same-origin frames are extracted and adopted; cross-origin ones are reported to the user as unreadable. Reading them needs `all_frames: true` plus frame-to-frame messaging.
+- **The 400-character collapsed-content threshold is a judgement call**, tuned against one accordion layout. It will need revisiting as the corpus grows — a page with hidden translations of its own content would over-extract.
 
 ### Phase 2 — Rules engine (first real output)
 
@@ -175,6 +201,7 @@ Make the extension reliably answer "is there a policy here, and what is its text
 
 ### Phase 6 — Distribution
 
+- `web-ext lint` is clean (0 errors) and runs with `npx --yes web-ext lint --source-dir . --ignore-files "test/**"`. Note `data_collection_permissions` forces `strict_min_version` to 140 — the key did not exist before Firefox 140, and the linter fails the combination.
 - Manifest hygiene: `data_collection_permissions` currently declares `["none"]`. **That becomes false the moment the LLM tier ships** — page content leaves the browser. Update it, and put a clear first-run disclosure in front of the first network call. AMO review will look at exactly this.
 - A privacy policy for the extension itself (yes, really).
 - Optional hosted proxy: removes BYO keys, enables rate limiting and a shared cache across users (one analysis of a major ToS serves everyone). Introduces a server, an abuse surface, and a cost model; only worth it with real usage.
@@ -186,7 +213,18 @@ Make the extension reliably answer "is there a policy here, and what is its text
 
 The thing most likely to sink this project is quality regressions you can't see.
 
-- **Fixture corpus**: save the raw HTML of 20–30 real policies (big tech, SaaS, banks, a couple of deliberately user-friendly ones) into `test/fixtures/`. Never test against the live web — it changes under you.
+**The harness exists as of Phase 1.** It needs no dependencies and no build step:
+
+```bash
+python -m http.server 8765
+```
+
+Then open `http://localhost:8765/test/runner.html` for the assertion suite, or `http://localhost:8765/test/popup-preview.html?fixture=apple-privacy.html` to see the real popup rendered against a real extraction. The runner loads each fixture into a `sandbox="allow-same-origin"` iframe — same origin so the DOM is readable, no `allow-scripts` so the fixture's own JavaScript never runs — and passes the recorded original URL to detection, since the fixture itself is served from localhost.
+
+Two caveats to keep in mind when reading results: fixtures are static HTML, so anything a site renders client-side is missing (this is why the Apple accordion bug was visible at all), and their stylesheets load from the original hosts or not at all, so `getComputedStyle` results are approximate.
+
+- **Fixture corpus**: 5 real policies, 3 real negatives, 1 hand-written signup page. Grow toward 20–30, adding banks and deliberately user-friendly policies. Never test against the live web — it changes under you.
+- **Hard negatives matter more than positives.** The corpus earns its keep through `neg-wikipedia-privacy` (an article about privacy policies) and `neg-mozilla-home` (marketing copy that says "you" and "we" constantly). Both were misclassified by an approach that looked reasonable on paper.
 - **Extraction tests**: assert word count within a range and that known section headings survive.
 - **Rules tests**: hand-label the expected findings for ~10 fixtures. Track precision/recall as `patterns.json` grows; a new pattern that raises recall 2% and drops precision 15% is a bad trade and you want to *see* that.
 - **Negation regression suite**: a flat file of tricky sentences ("we do not sell your personal information") that must produce zero or `good` findings.
@@ -209,10 +247,10 @@ The thing most likely to sink this project is quality regressions you can't see.
 
 ## 7. Suggested order of work
 
-1. `lib/schema.js` + `lib/storage.js` — the shared vocabulary, first.
-2. Phase 1 extraction/detection. **Do not skip to the LLM** — every downstream tier is only as good as the text it receives, and bad extraction looks like a bad model.
-3. Phase 2 rules engine + the popup list UI. The first thing worth showing anyone.
-4. Fixture corpus + tests, before the rules grow past ~15 patterns.
+1. ~~`lib/schema.js` + `lib/storage.js` — the shared vocabulary, first.~~ **Done.**
+2. ~~Phase 1 extraction/detection.~~ **Done** — and the warning was justified: two extraction bugs would each have looked like a bad model rather than bad text.
+3. ~~Fixture corpus + tests.~~ **Done**, pulled forward from step 4 — Phase 1 could not be called finished without something to verify it against, and the corpus immediately found two real bugs.
+4. Phase 2 rules engine + the popup list UI. The first thing worth showing anyone.
 5. Phase 3 LLM behind a feature flag.
 6. Cache, then cost controls, then the signup-page badge.
 7. Preferences, polish, AMO submission.

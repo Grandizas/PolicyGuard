@@ -1,0 +1,85 @@
+[
+  {
+    "file": "mozilla-terms.html",
+    "url": "https://www.mozilla.org/en-US/about/legal/terms/mozilla/",
+    "expect": {
+      "isPolicy": true,
+      "docType": "terms",
+      "minWords": 500
+    }
+  },
+  {
+    "file": "wikimedia-privacy.html",
+    "url": "https://foundation.wikimedia.org/wiki/Policy:Privacy_policy",
+    "expect": {
+      "isPolicy": true,
+      "docType": "privacy_policy",
+      "minWords": 2000
+    }
+  },
+  {
+    "file": "github-tos.html",
+    "url": "https://docs.github.com/en/site-policy/github-terms/github-terms-of-service",
+    "expect": {
+      "isPolicy": true,
+      "docType": "terms",
+      "minWords": 2000
+    }
+  },
+  {
+    "file": "apple-privacy.html",
+    "url": "https://www.apple.com/legal/privacy/en-ww/",
+    "expect": {
+      "isPolicy": true,
+      "docType": "privacy_policy",
+      "minWords": 1000
+    }
+  },
+  {
+    "file": "stackoverflow-tos.html",
+    "url": "https://stackoverflow.com/legal/terms-of-service/public",
+    "expect": {
+      "isPolicy": true,
+      "docType": "terms",
+      "minWords": 2000
+    }
+  },
+  {
+    "file": "synthetic-signup.html",
+    "url": "https://examplr.test/signup",
+    "expect": {
+      "isPolicy": false,
+      "links": {
+        "min": 3,
+        "nearAgreement": [
+          "Terms of Service",
+          "Privacy Policy"
+        ],
+        "notNearAgreement": [
+          "Cookie Policy"
+        ]
+      }
+    }
+  },
+  {
+    "file": "neg-mozilla-home.html",
+    "url": "https://www.mozilla.org/en-US/",
+    "expect": {
+      "isPolicy": false
+    }
+  },
+  {
+    "file": "neg-wikipedia-cat.html",
+    "url": "https://en.wikipedia.org/wiki/Cat",
+    "expect": {
+      "isPolicy": false
+    }
+  },
+  {
+    "file": "neg-wikipedia-privacy.html",
+    "url": "https://en.wikipedia.org/wiki/Privacy_policy",
+    "expect": {
+      "isPolicy": false
+    }
+  }
+]

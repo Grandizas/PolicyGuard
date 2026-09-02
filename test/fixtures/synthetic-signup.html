@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Create your account — Examplr</title>
+</head>
+<body>
+
+<!--
+    Hand-written, not captured from a real site.
+
+    This is the case Phase 4 exists for: an ordinary signup form where the policy
+    is one click away behind a checkbox. It should NOT be detected as a policy
+    page, and the two links beside the consent checkbox should come back flagged
+    as sitting next to an agreement control.
+-->
+
+<header>
+    <nav>
+        <a href="/">Examplr</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/blog">Blog</a>
+    </nav>
+</header>
+
+<main>
+    <h1>Create your account</h1>
+
+    <p>Join 40,000 teams already shipping faster with Examplr.</p>
+
+    <form action="/register" method="post">
+        <label for="email">Work email</label>
+        <input id="email" name="email" type="email">
+
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password">
+
+        <div class="consent">
+            <input id="agree" name="agree" type="checkbox">
+            <label for="agree">
+                I agree to the
+                <a href="/legal/terms-of-service">Terms of Service</a>
+                and the
+                <a href="/legal/privacy-policy">Privacy Policy</a>.
+            </label>
+        </div>
+
+        <button type="submit">Create account</button>
+    </form>
+
+    <p class="alt">Already have an account? <a href="/login">Sign in</a>.</p>
+</main>
+
+<footer>
+    <a href="/legal/cookie-policy">Cookie Policy</a>
+    <a href="/about">About</a>
+    <a href="/careers">Careers</a>
+</footer>
+
+</body>
+</html>

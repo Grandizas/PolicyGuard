@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Policy Guard — extraction tests</title>
+    <style>
+        body { font: 13px/1.5 system-ui, sans-serif; margin: 20px; }
+        pre { background: #f4f4f6; padding: 12px; border-radius: 6px; overflow: auto; }
+        iframe { width: 900px; height: 300px; border: 1px solid #ccc; }
+        #stage { position: absolute; left: -10000px; top: 0; }
+    </style>
+</head>
+<body>
+
+<h1>Policy Guard — extraction tests</h1>
+<p>
+    Fixtures are loaded into a script-free same-origin iframe and run through the
+    real <code>content/detect.js</code> and <code>content/extract.js</code>.
+    The recorded original URL is passed to detection, since the fixture is served
+    from localhost.
+</p>
+
+<pre id="results">Running…</pre>
+
+<div id="stage"></div>
+
+<script src="../content/detect.js"></script>
+<script src="../content/extract.js"></script>
+<script>
+    const stage = document.querySelector("#stage");
+    const out = document.querySelector("#results");
+
+    function loadFixture(file) {
+        return new Promise((resolve, reject) => {
+            const frame = document.createElement("iframe");
+
+            // allow-same-origin without allow-scripts: we can read the DOM, but
+            // the fixture's own scripts never run.
+            frame.setAttribute("sandbox", "allow-same-origin");
+            frame.src = "fixtures/" + file;
+
+            frame.addEventListener("load", () => resolve(frame));
+            frame.addEventListener("error", () => reject(new Error("load failed: " + file)));
+
+            stage.append(frame);
+        });
+    }
+
+    function pad(value, width) {
+        return String(value).padEnd(width);
+    }
+
+    async function run() {
+        const cases = await (await fetch("fixtures/index.json", { cache: "no-store" })).json();
+        const lines = [];
+        const summary = { pass: 0, fail: 0 };
+
+        lines.push([
+            pad("FIXTURE", 26),
+            pad("POLICY", 7),
+            pad("SCORE", 6),
+            pad("WORDS", 7),
+            pad("SECT", 5),
+            pad("DENS", 6),
+            pad("TYPE", 16),
+            pad("METHOD", 10),
+            "VERDICT"
+        ].join(" "));
+
+        lines.push("-".repeat(110));
+
+        for (const testCase of cases) {
+            let frame;
+
+            try {
+                frame = await loadFixture(testCase.file);
+            } catch (error) {
+                lines.push(pad(testCase.file, 26) + " LOAD ERROR " + error.message);
+                summary.fail += 1;
+                continue;
+            }
+
+            const doc = frame.contentDocument;
+            const started = performance.now();
+
+            const extraction = PolicyGuard.extract.extractPolicy(doc);
+
+            const detection = PolicyGuard.detect.detectPage(
+                doc,
+                testCase.url,
+                extraction.fullText,
+                extraction.wordCount
+            );
+
+            const elapsed = Math.round(performance.now() - started);
+            const problems = [];
+
+            if (detection.isPolicy !== testCase.expect.isPolicy) {
+                problems.push("isPolicy expected " + testCase.expect.isPolicy);
+            }
+
+            if (testCase.expect.links) {
+                const links = PolicyGuard.detect.findPolicyLinks(doc, testCase.url);
+                const flagged = links.filter((l) => l.nearAgreement).map((l) => l.text);
+
+                if (links.length < testCase.expect.links.min) {
+                    problems.push("links " + links.length + " < " + testCase.expect.links.min);
+                }
+
+                for (const expected of testCase.expect.links.nearAgreement ?? []) {
+                    if (!flagged.includes(expected)) {
+                        problems.push("not flagged near agreement: " + expected);
+                    }
+                }
+
+                for (const unexpected of testCase.expect.links.notNearAgreement ?? []) {
+                    if (flagged.includes(unexpected)) {
+                        problems.push("wrongly flagged near agreement: " + unexpected);
+                    }
+                }
+
+                lines.push("    policy links: " + links.length +
+                    ", beside an agree control: " + JSON.stringify(flagged));
+            }
+
+            if (testCase.expect.docType && detection.docType !== testCase.expect.docType) {
+                problems.push("docType got " + detection.docType);
+            }
+
+            if (testCase.expect.minWords && extraction.wordCount < testCase.expect.minWords) {
+                problems.push("words < " + testCase.expect.minWords);
+            }
+
+            if (problems.length === 0) {
+                summary.pass += 1;
+            } else {
+                summary.fail += 1;
+            }
+
+            lines.push([
+                pad(testCase.file.replace(".html", ""), 26),
+                pad(detection.isPolicy ? "yes" : "no", 7),
+                pad(detection.score, 6),
+                pad(extraction.wordCount, 7),
+                pad(extraction.sections.length, 5),
+                pad(detection.signals.density.per1000, 6),
+                pad(detection.docType, 16),
+                pad(extraction.method, 10),
+                problems.length === 0 ? "PASS (" + elapsed + "ms)" : "FAIL " + problems.join("; ")
+            ].join(" "));
+
+            if (testCase.expect.isPolicy) {
+                const headings = extraction.sections
+                    .filter((s) => s.heading)
+                    .slice(0, 5)
+                    .map((s) => s.heading.slice(0, 40));
+
+                lines.push("    first headings: " + JSON.stringify(headings));
+                lines.push("    first 160 chars: " + JSON.stringify(extraction.fullText.slice(0, 160)));
+            }
+
+            frame.remove();
+        }
+
+        lines.push("-".repeat(110));
+        lines.push(summary.pass + " passed, " + summary.fail + " failed");
+
+        out.textContent = lines.join("\n");
+        document.title = "done " + summary.pass + "/" + (summary.pass + summary.fail);
+    }
+
+    run().catch((error) => {
+        out.textContent = "runner error: " + (error && error.stack ? error.stack : error);
+    });
+</script>
+
+</body>
+</html>

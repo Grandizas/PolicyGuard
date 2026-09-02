@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Policy Guard — popup preview</title>
+</head>
+<body>
+
+<!--
+    Renders the real popup against a real extraction, with the WebExtension APIs
+    stubbed. The popup markup is fetched from popup/popup.html rather than copied,
+    so this harness cannot drift from the real thing.
+
+    Usage: popup-preview.html?fixture=apple-privacy.html
+-->
+
+<script src="../content/detect.js"></script>
+<script src="../content/extract.js"></script>
+<script type="module">
+    const params = new URLSearchParams(location.search);
+    const fixtureFile = params.get("fixture") ?? "apple-privacy.html";
+
+    const cases = await (await fetch("fixtures/index.json")).json();
+    const testCase = cases.find((c) => c.file === fixtureFile) ?? cases[0];
+
+    // --- run the real content-script pipeline over the fixture ---------------
+
+    const frame = document.createElement("iframe");
+
+    frame.setAttribute("sandbox", "allow-same-origin");
+    frame.style.cssText = "position:absolute;left:-10000px";
+    frame.src = "fixtures/" + testCase.file;
+
+    await new Promise((resolve) => {
+        frame.addEventListener("load", resolve);
+        document.body.append(frame);
+    });
+
+    const doc = frame.contentDocument;
+    const extraction = PolicyGuard.extract.extractPolicy(doc);
+
+    const detection = PolicyGuard.detect.detectPage(
+        doc,
+        testCase.url,
+        extraction.fullText,
+        extraction.wordCount
+    );
+
+    const policyLinks = detection.isPolicy
+        ? []
+        : PolicyGuard.detect.findPolicyLinks(doc, testCase.url);
+
+    // --- shape it the way background.js does --------------------------------
+
+    const report = {
+        supported: true,
+        title: doc.title,
+        preview: extraction.fullText.slice(0, 400),
+        policyLinks,
+        analysis: {
+            url: testCase.url,
+            hostname: new URL(testCase.url).hostname,
+            analyzedAt: new Date().toISOString(),
+            contentHash: null,
+            riskLevel: "low",
+            summary: "",
+            findings: [],
+            tiers: { rules: false, llm: false },
+            truncated: false,
+            detection,
+            extraction: {
+                method: extraction.method,
+                wordCount: extraction.wordCount,
+                charCount: extraction.charCount,
+                blockCount: extraction.blockCount,
+                sectionCount: extraction.sections.length,
+                sections: extraction.sections.map((s) => ({
+                    heading: s.heading,
+                    level: s.level,
+                    wordCount: s.wordCount,
+                    charStart: s.charStart,
+                    charEnd: s.charEnd
+                })),
+                degraded: extraction.degraded,
+                collapsedSections: extraction.collapsedSections,
+                unreadableFrames: extraction.unreadableFrames
+            }
+        }
+    };
+
+    globalThis.browser = {
+        tabs: {
+            query: async () => [{ id: 1, url: testCase.url }]
+        },
+        runtime: {
+            sendMessage: async () => report
+        }
+    };
+
+    // --- mount the real popup -----------------------------------------------
+
+    const markup = await (await fetch("../popup/popup.html")).text();
+    const parsed = new DOMParser().parseFromString(markup, "text/html");
+
+    const styles = document.createElement("link");
+
+    styles.rel = "stylesheet";
+    styles.href = "../popup/popup.css";
+    document.head.append(styles);
+
+    for (const node of Array.from(parsed.body.children)) {
+        if (node.tagName !== "SCRIPT") {
+            document.body.append(document.importNode(node, true));
+        }
+    }
+
+    await import("../popup/popup.js");
+
+    globalThis.__previewReady = true;
+</script>
+
+</body>
+</html>
